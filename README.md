@@ -1,50 +1,89 @@
-# Welcome to your Expo app 👋
+# Meeteasy (모임 일정 조율 앱)
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+## 소개
 
-## Get started
+Meeteasy는 모임 생성, 일정 조율, AI 추천, 채팅, 후기 등 모임의 모든 과정을 쉽고 효율적으로 관리할 수 있는 모바일 앱입니다. (Expo 기반)
 
-1. Install dependencies
+---
 
-   ```bash
-   npm install
-   ```
+## 주요 기능/화면
 
-2. Start the app
+1. **온보딩/로그인**
+   - 앱 소개 슬라이드, 소셜/비회원 로그인, 개인정보 동의, 푸시 권한 안내
+2. **메인(모임 목록)**
+   - 내가 참여 중인 모임 리스트, 새 모임 만들기, D-Day, 최근 메시지, 알림 뱃지, 하단 탭
+3. **모임 생성/초대**
+   - 모임명, 목적, 대표 이모지/이미지, 참석자 추가, 일정 후보 입력, 초대 링크/QR
+4. **일정 조율/투표**
+   - 일정 후보 리스트, 참석자별 가능 체크, AI 추천, 투표, 의견/채팅
+5. **일정 확정/상세**
+   - 확정 일정/장소, 참석자 상태, 지도, 캘린더 연동, 일정 변경/취소, 채팅방 진입
+6. **모임 채팅/커뮤니케이션**
+   - 실시간 채팅, 공지/준비물/할일, 역할, 후기/사진
+7. **내 정보/설정**
+   - 프로필, 내 모임 관리, 캘린더 연동, 알림/로그아웃
+8. **캘린더 통합 보기(선택)**
+   - 월간/주간 달력, 일정/모임 표시, 상세 진입/추가
 
-   ```bash
-   npx expo start
-   ```
+---
 
-In the output, you'll find options to open the app in a
+## 폴더 구조(예시)
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+app/
+  onboarding/         # 온보딩/로그인
+  (tabs)/             # 하단 탭(모임, 캘린더, 내 정보)
+    home/             # 메인(모임 목록)
+    create-group/     # 모임 생성/초대
+    schedule/         # 일정 조율/투표
+    group-detail/     # 일정 확정/상세
+    chat/             # 모임 채팅/커뮤니케이션
+    profile/          # 내 정보/설정
+    calendar/         # (선택) 캘린더 통합
+  components/         # 공통 UI 컴포넌트
+  hooks/
+  utils/
+  constants/
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+---
 
-## Learn more
+## 기술스택
 
-To learn more about developing your project with Expo, look at the following resources:
+- React Native (Expo)
+- TypeScript
+- Expo Router (탭/스택 네비게이션)
+- react-native-paper, react-native-calendars 등 UI 라이브러리
+- (추후) 데이터베이스/서버 연동, 소셜 로그인, 푸시 알림 등
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+---
 
-## Join the community
+## 실행 방법
 
-Join our community of developers creating universal apps.
+1. Node.js, Yarn/npm, Expo CLI 설치
+2. 저장소 클론 후 의존성 설치
+   ```bash
+   yarn install
+   # 또는
+   npm install
+   ```
+3. Expo 앱 실행
+   ```bash
+   expo start
+   ```
+4. QR코드로 기기에서 테스트 또는 시뮬레이터 실행
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+---
+
+## 화면별 사용자 플로우
+
+1. 온보딩/로그인 → 2. 메인(모임 목록) → 3. 모임 생성/초대
+   → 4. 일정 조율/투표 → 5. 일정 확정/상세 → 6. 모임 채팅/커뮤니케이션
+   → 7. 내 정보/설정 → 8. (필요 시) 캘린더 통합 보기
+
+---
+
+## 커스텀/확장
+
+- 각 화면/컴포넌트는 `app/` 하위 폴더에서 분리 관리
+- 상태관리, 서버 연동, 소셜 로그인, 푸시 알림 등은 추후 단계별 확장 가능
