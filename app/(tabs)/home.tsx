@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React from "react";
-import { FlatList, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { FlatList, SafeAreaView, StyleSheet, Text, TouchableOpacity, View, useColorScheme } from "react-native";
 
 const mockMeetings = [
   { id: "1", name: "스터디 모임", date: "2024-07-10", status: "일정 조율 중", lastMsg: "내일 일정 투표해 주세요!", dday: 3, unread: 2 },
@@ -8,9 +8,15 @@ const mockMeetings = [
 ];
 
 export default function HomeScreen() {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === "dark";
+  const bgColor = isDark ? "#181A20" : "#f8f9fb";
+  const cardColor = isDark ? "#23262F" : "#fff";
+  const textColor = isDark ? "#fff" : "#222";
+  const infoColor = isDark ? "#bbb" : "#888";
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#f8f9fb" }}>
-      <View style={styles.container}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: bgColor }]}>
+      <View style={[styles.container, { backgroundColor: bgColor }]}>
         <TouchableOpacity style={styles.createBtn}>
           <MaterialCommunityIcons name="plus" size={24} color="#fff" />
           <Text style={styles.createBtnText}>새 모임 만들기</Text>
@@ -19,13 +25,13 @@ export default function HomeScreen() {
           data={mockMeetings}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <View style={styles.card}>
+            <View style={[styles.card, { backgroundColor: cardColor }]}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{item.name}</Text>
-                <Text style={styles.info}>
+                <Text style={[styles.name, { color: textColor }]}>{item.name}</Text>
+                <Text style={[styles.info, { color: infoColor }]}>
                   {item.date} · {item.status}
                 </Text>
-                <Text style={styles.lastMsg}>{item.lastMsg}</Text>
+                <Text style={[styles.lastMsg, { color: "#4F8EF7" }]}>{item.lastMsg}</Text>
               </View>
               <View style={styles.rightBox}>
                 <Text style={styles.dday}>{`D-${item.dday}`}</Text>
@@ -45,7 +51,14 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: 20, paddingTop: 24 },
+  safeArea: {
+    flex: 1,
+  },
+  container: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 24,
+  },
   createBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -60,7 +73,6 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
     borderRadius: 14,
     padding: 18,
     marginBottom: 14,
@@ -69,9 +81,9 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
-  name: { fontSize: 18, fontWeight: "600", color: "#222" },
-  info: { fontSize: 14, color: "#888", marginTop: 2 },
-  lastMsg: { fontSize: 14, color: "#4F8EF7", marginTop: 6 },
+  name: { fontSize: 18, fontWeight: "600" },
+  info: { fontSize: 14, marginTop: 2 },
+  lastMsg: { fontSize: 14, marginTop: 6 },
   rightBox: { alignItems: "flex-end", justifyContent: "space-between", height: 48 },
   dday: { color: "#4F8EF7", fontWeight: "bold", fontSize: 15 },
   badge: {

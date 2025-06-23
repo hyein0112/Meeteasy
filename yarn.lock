@@ -2513,6 +2513,14 @@ expo-splash-screen@~0.30.9:
   dependencies:
     "@expo/prebuild-config" "^9.0.6"
 
+expo-status-bar@^2.2.3:
+  version "2.2.3"
+  resolved "https://registry.npmjs.org/expo-status-bar/-/expo-status-bar-2.2.3.tgz"
+  integrity sha512-+c8R3AESBoduunxTJ8353SqKAKpxL6DvcD8VKBuh81zzJyUUbfB4CVjr1GufSJEKsMzNPXZU+HJwXx7Xh7lx8Q==
+  dependencies:
+    react-native-edge-to-edge "1.6.0"
+    react-native-is-edge-to-edge "^1.1.6"
+
 expo@^53.0.0:
   version "53.0.12"
   resolved "https://registry.npmjs.org/expo/-/expo-53.0.12.tgz"

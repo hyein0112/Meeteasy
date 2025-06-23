@@ -30,12 +30,14 @@ const slides = [
 
 const { width } = Dimensions.get("window");
 
-export default function IntroSlides({ onChangeIndex }: { onChangeIndex?: (idx: number) => void }) {
+export default function IntroSlides({ onChangeIndex, isDark }: { onChangeIndex?: (idx: number) => void; isDark?: boolean }) {
   const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (!onChangeIndex) return;
     const idx = Math.round(e.nativeEvent.contentOffset.x / width);
     onChangeIndex(idx);
   };
+  const titleColor = isDark ? "#fff" : "#4F8EF7";
+  const descColor = isDark ? "#eee" : "#444";
   return (
     <FlatList
       data={slides}
@@ -46,8 +48,8 @@ export default function IntroSlides({ onChangeIndex }: { onChangeIndex?: (idx: n
       renderItem={({ item }) => (
         <View style={[styles.slide, { width }]}>
           <Text style={styles.emoji}>{item.emoji}</Text>
-          <Text style={styles.title}>{item.title}</Text>
-          <Text style={styles.desc}>{item.desc}</Text>
+          <Text style={[styles.title, { color: titleColor }]}>{item.title}</Text>
+          <Text style={[styles.desc, { color: descColor }]}>{item.desc}</Text>
         </View>
       )}
       onScroll={handleScroll}
@@ -59,6 +61,6 @@ export default function IntroSlides({ onChangeIndex }: { onChangeIndex?: (idx: n
 const styles = StyleSheet.create({
   slide: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
   emoji: { fontSize: 64, marginBottom: 24 },
-  title: { fontSize: 24, fontWeight: "bold", color: "#4F8EF7", marginBottom: 12 },
-  desc: { fontSize: 17, color: "#444", textAlign: "center" },
+  title: { fontSize: 24, fontWeight: "bold", marginBottom: 12 },
+  desc: { fontSize: 17, textAlign: "center" },
 });
