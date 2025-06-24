@@ -1,19 +1,34 @@
 // Firebase 연결 테스트 스크립트
+require("dotenv/config");
 const { initializeApp } = require("firebase/app");
 const { getAuth } = require("firebase/auth");
 const { getFirestore } = require("firebase/firestore");
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDvwl6KpZ4GtxkU8NIHJfXHWDOvw3EkN2A",
-  authDomain: "meeteasy-86b9d.firebaseapp.com",
-  projectId: "meeteasy-86b9d",
-  storageBucket: "meeteasy-86b9d.firebasestorage.app",
-  messagingSenderId: "624147132797",
-  appId: "1:624147132797:web:17803c4af4f573286edc14",
-  measurementId: "G-EPL2VPG2RV",
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
 console.log("🔥 Firebase 연결 테스트 시작...");
+
+// 환경 변수 확인
+if (!firebaseConfig.apiKey) {
+  console.error("❌ 환경 변수가 설정되지 않았습니다. .env 파일을 확인해주세요.");
+  console.log("📝 필요한 환경 변수:");
+  console.log("  - EXPO_PUBLIC_FIREBASE_API_KEY");
+  console.log("  - EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN");
+  console.log("  - EXPO_PUBLIC_FIREBASE_PROJECT_ID");
+  console.log("  - EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET");
+  console.log("  - EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID");
+  console.log("  - EXPO_PUBLIC_FIREBASE_APP_ID");
+  console.log("  - EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID");
+  process.exit(1);
+}
 
 try {
   // Firebase 앱 초기화
@@ -36,5 +51,5 @@ try {
   console.log("🎉 Firebase 연결 테스트 완료! 모든 서비스가 정상적으로 초기화되었습니다.");
 } catch (error) {
   console.error("❌ Firebase 연결 테스트 실패:", error.message);
-  console.error("�� 오류 상세:", error);
+  console.error("🔍 오류 상세:", error);
 }

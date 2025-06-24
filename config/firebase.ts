@@ -1,17 +1,17 @@
+import Constants from "expo-constants";
 import { FirebaseApp, getApp, getApps, initializeApp } from "firebase/app";
 import { Auth, getAuth } from "firebase/auth";
 import { Firestore, disableNetwork, enableNetwork, getFirestore } from "firebase/firestore";
 import { FirebaseStorage, getStorage } from "firebase/storage";
-
 // 환경 변수에서 Firebase 설정 가져오기 (실제 프로젝트에서 설정 필요)
 const firebaseConfig = {
-  apiKey: "AIzaSyDvwl6KpZ4GtxkU8NIHJfXHWDOvw3EkN2A",
-  authDomain: "meeteasy-86b9d.firebaseapp.com",
-  projectId: "meeteasy-86b9d",
-  storageBucket: "meeteasy-86b9d.firebasestorage.app",
-  messagingSenderId: "624147132797",
-  appId: "1:624147132797:web:17803c4af4f573286edc14",
-  measurementId: "G-EPL2VPG2RV",
+  apiKey: Constants.expoConfig?.extra?.FIREBASE_API_KEY,
+  authDomain: Constants.expoConfig?.extra?.FIREBASE_AUTH_DOMAIN,
+  projectId: Constants.expoConfig?.extra?.FIREBASE_PROJECT_ID,
+  storageBucket: Constants.expoConfig?.extra?.FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: Constants.expoConfig?.extra?.FIREBASE_MESSAGING_SENDER_ID,
+  appId: Constants.expoConfig?.extra?.FIREBASE_APP_ID,
+  measurementId: Constants.expoConfig?.extra?.FIREBASE_MEASUREMENT_ID,
 };
 
 // Firebase 앱 초기화 (이미 초기화된 경우 기존 앱 사용)
