@@ -2,7 +2,7 @@ import "dotenv/config";
 
 export default {
   expo: {
-    name: "meeteasy",
+    name: "Meeteasy - 손쉬운 일정 조율 앱, 미티지",
     slug: "meeteasy",
     version: "1.0.0",
     orientation: "portrait",
@@ -11,6 +11,7 @@ export default {
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
     ios: {
+      bundleIdentifier: "com.hyeinee.meeteasy",
       supportsTablet: true,
       infoPlist: {
         NSPhotoLibraryUsageDescription: "모임 사진을 공유하기 위해 갤러리에 접근합니다.",
@@ -55,6 +56,9 @@ export default {
       FIREBASE_MESSAGING_SENDER_ID: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
       FIREBASE_APP_ID: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
       FIREBASE_MEASUREMENT_ID: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
+      eas: {
+        projectId: "1e7fce59-872e-4912-b202-88d7fb9f06f8",
+      },
     },
   },
 };
