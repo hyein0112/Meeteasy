@@ -2,7 +2,7 @@ import "dotenv/config";
 
 export default {
   expo: {
-    name: "Meeteasy - 손쉬운 일정 조율 앱, 미티지",
+    name: "Meeteasy",
     slug: "meeteasy",
     version: "1.0.0",
     orientation: "portrait",
