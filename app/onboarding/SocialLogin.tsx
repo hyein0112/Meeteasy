@@ -1,38 +1,37 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-export default function SocialLogin({ onLogin, isDark }: { onLogin: () => void; isDark?: boolean }) {
+export default function SocialLogin({ isDark }: { isDark?: boolean }) {
+  const router = useRouter();
   const [agreed, setAgreed] = useState(false);
-  const cardColor = "#fff";
-  const textColor = "#222";
-  const pushInfoColor = "#888";
   const checkboxBg = "#fff";
+  const textColor = isDark ? "#fff" : "#222";
+
+  const handleEmailLogin = () => {
+    if (!agreed) return;
+    router.push("/onboarding/EmailAuth");
+  };
+
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={[styles.snsBtn, { backgroundColor: cardColor }]} disabled>
-        <MaterialCommunityIcons name="message-processing" size={24} color="#3C1E1E" style={{ marginRight: 8 }} />
-        <Text style={[styles.snsText, { color: textColor }]}>카카오로 시작 (준비중)</Text>
+      <TouchableOpacity
+        style={[styles.snsBtn, { backgroundColor: "#4F8EF7" }]}
+        onPress={agreed ? handleEmailLogin : undefined}
+        disabled={!agreed}
+      >
+        <MaterialCommunityIcons name="email" size={24} color="#fff" style={{ marginRight: 8 }} />
+        <Text style={[styles.snsText, { color: "#fff" }]}>이메일로 시작</Text>
       </TouchableOpacity>
-      <TouchableOpacity style={[styles.snsBtn, { backgroundColor: cardColor }]} disabled>
-        <MaterialCommunityIcons name="google" size={24} color="#EA4335" style={{ marginRight: 8 }} />
-        <Text style={[styles.snsText, { color: textColor }]}>구글로 시작 (준비중)</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={[styles.snsBtn, { backgroundColor: cardColor }]} disabled>
-        <MaterialCommunityIcons name="apple" size={24} color="#222" style={{ marginRight: 8 }} />
-        <Text style={[styles.snsText, { color: textColor }]}>애플로 시작 (준비중)</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={[styles.snsBtn, { backgroundColor: "#4F8EF7" }]} onPress={agreed ? onLogin : undefined} disabled={!agreed}>
-        <MaterialCommunityIcons name="account" size={24} color="#fff" style={{ marginRight: 8 }} />
-        <Text style={[styles.snsText, { color: "#fff" }]}>비회원으로 시작</Text>
-      </TouchableOpacity>
+
       <View style={styles.agreeRow}>
         <TouchableOpacity onPress={() => setAgreed((v) => !v)} style={[styles.checkbox, { backgroundColor: checkboxBg }]}>
           {agreed && <MaterialCommunityIcons name="check" size={18} color="#4F8EF7" />}
         </TouchableOpacity>
         <Text style={[styles.agreeText, { color: "#4F8EF7" }]}>개인정보 처리방침 및 이용약관 동의</Text>
       </View>
-      <Text style={[styles.pushInfo, { color: pushInfoColor }]}>서비스 이용을 위해 푸시 알림 권한이 필요할 수 있습니다.</Text>
+      <Text style={[styles.pushInfo, { color: textColor }]}>서비스 이용을 위해 푸시 알림 권한이 필요할 수 있습니다.</Text>
     </View>
   );
 }

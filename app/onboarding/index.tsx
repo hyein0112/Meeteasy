@@ -1,7 +1,8 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Dimensions, SafeAreaView, StyleSheet, Text, View, useColorScheme } from "react-native";
+import { useAuthStore } from "../../stores/authStore";
 import IntroSlides from "./IntroSlides";
 import SocialLogin from "./SocialLogin";
 
@@ -12,11 +13,20 @@ export default function OnboardingScreen() {
   const [slideIdx, setSlideIdx] = useState(0);
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
-  const bgColor = isDark ? "#181A20" : "#f8f9fb";
+  const bgColor = isDark ? "#181A20" : "f8f9fb";
   const gradientColors = isDark ? (["#23262F", "#181A20"] as const) : (["#eaf2ff", "#ffffff"] as const);
   const titleColor = "#4F8EF7";
   const indicatorColor = isDark ? "#444" : "#d0e2ff";
   const indicatorActiveColor = "#4F8EF7";
+  const { user } = useAuthStore();
+
+  useEffect(() => {
+    // 이미 로그인된 경우 홈으로 강제 이동
+    if (user) {
+      router.replace("/(tabs)/home");
+    }
+    // else 블록은 필요 없음! 무한루프 방지
+  }, [user]);
 
   return (
     <View style={{ flex: 1, backgroundColor: bgColor }}>
@@ -42,7 +52,7 @@ export default function OnboardingScreen() {
             ))}
           </View>
           <View style={styles.loginBox}>
-            <SocialLogin onLogin={() => router.replace("/home")} isDark={isDark} />
+            <SocialLogin isDark={isDark} />
           </View>
         </SafeAreaView>
       </View>
