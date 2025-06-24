@@ -2,7 +2,21 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { Timestamp } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
-import { Alert, FlatList, RefreshControl, SafeAreaView, StyleSheet, Text, TouchableOpacity, View, useColorScheme } from "react-native";
+import {
+  Alert,
+  FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  RefreshControl,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  useColorScheme,
+} from "react-native";
 import { enableFirestoreNetwork } from "../../config/firebase";
 import { MeetingService } from "../../services/meetingService";
 import { useAuthStore } from "../../stores/authStore";
@@ -20,6 +34,9 @@ export default function HomeScreen() {
   const { meetings, setMeetings, setLoading } = useMeetingStore();
   const [refreshing, setRefreshing] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<"connected" | "error" | "loading">("loading");
+  const [isJoinModalVisible, setJoinModalVisible] = useState(false);
+  const [inviteCodeInput, setInviteCodeInput] = useState("");
+  const [joinLoading, setJoinLoading] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -106,6 +123,51 @@ export default function HomeScreen() {
     return dateObj.toLocaleDateString("ko-KR");
   };
 
+  const handleJoinMeeting = async () => {
+    if (!inviteCodeInput.trim() || !user) return;
+    setJoinLoading(true);
+    try {
+      const meeting = await MeetingService.findMeetingByInviteCode(inviteCodeInput.trim());
+      if (!meeting) {
+        Alert.alert("오류", "유효하지 않은 초대 코드입니다.");
+        setJoinLoading(false);
+        return;
+      }
+      const isAlreadyParticipant = meeting.participants.some((p) => p.id === user.uid);
+      if (isAlreadyParticipant) {
+        Alert.alert("알림", "이미 참여 중인 모임입니다.");
+        setJoinModalVisible(false);
+        setInviteCodeInput("");
+        setJoinLoading(false);
+        router.push({ pathname: "/meeting-detail", params: { meetingId: meeting.id } } as any);
+        return;
+      }
+      await MeetingService.addParticipant(meeting.id, {
+        id: user.uid,
+        name: userProfile?.name || user.displayName || user.email || "알 수 없음",
+        email: user.email || undefined,
+        profileImage: user.photoURL || undefined,
+        status: "pending",
+        joinedAt: new Date(),
+      });
+      Alert.alert("성공", "모임에 참여했습니다!", [
+        {
+          text: "확인",
+          onPress: () => {
+            setJoinModalVisible(false);
+            setInviteCodeInput("");
+            router.push({ pathname: "/meeting-detail", params: { meetingId: meeting.id } } as any);
+          },
+        },
+      ]);
+    } catch (error) {
+      console.error("모임 참여 오류:", error);
+      Alert.alert("오류", "모임 참여에 실패했습니다.");
+    } finally {
+      setJoinLoading(false);
+    }
+  };
+
   if (!user) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: bgColor }]}>
@@ -135,68 +197,7 @@ export default function HomeScreen() {
             <Text style={styles.createBtnText}>새 모임 만들기</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.joinBtn}
-            onPress={() => {
-              Alert.prompt(
-                "모임 참여",
-                "초대 코드를 입력하세요",
-                [
-                  { text: "취소", style: "cancel" },
-                  {
-                    text: "참여",
-                    onPress: async (inviteCode) => {
-                      if (!inviteCode || !user) return;
-
-                      try {
-                        const meeting = await MeetingService.findMeetingByInviteCode(inviteCode);
-
-                        if (!meeting) {
-                          Alert.alert("오류", "유효하지 않은 초대 코드입니다.");
-                          return;
-                        }
-
-                        const isAlreadyParticipant = meeting.participants.some((p) => p.id === user.uid);
-                        if (isAlreadyParticipant) {
-                          Alert.alert("알림", "이미 참여 중인 모임입니다.");
-                          router.push({
-                            pathname: "/meeting-detail",
-                            params: { meetingId: meeting.id },
-                          } as any);
-                          return;
-                        }
-
-                        await MeetingService.addParticipant(meeting.id, {
-                          id: user.uid,
-                          name: userProfile?.name || user.displayName || user.email || "알 수 없음",
-                          email: user.email || undefined,
-                          profileImage: user.photoURL || undefined,
-                          status: "pending",
-                          joinedAt: new Date(),
-                        });
-
-                        Alert.alert("성공", "모임에 참여했습니다!", [
-                          {
-                            text: "확인",
-                            onPress: () => {
-                              router.push({
-                                pathname: "/meeting-detail",
-                                params: { meetingId: meeting.id },
-                              } as any);
-                            },
-                          },
-                        ]);
-                      } catch (error) {
-                        console.error("모임 참여 오류:", error);
-                        Alert.alert("오류", "모임 참여에 실패했습니다.");
-                      }
-                    },
-                  },
-                ],
-                "plain-text"
-              );
-            }}
-          >
+          <TouchableOpacity style={styles.joinBtn} onPress={() => setJoinModalVisible(true)}>
             <MaterialCommunityIcons name="account-group" size={20} color="#4F8EF7" />
             <Text style={styles.joinBtnText}>모임 참여</Text>
           </TouchableOpacity>
@@ -249,6 +250,66 @@ export default function HomeScreen() {
           }
           contentContainerStyle={{ paddingBottom: 100 }}
         />
+
+        {/* 초대코드 입력 Modal */}
+        <Modal visible={isJoinModalVisible} transparent animationType="fade" onRequestClose={() => setJoinModalVisible(false)}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.4)" }}
+          >
+            <View style={{ width: 320, backgroundColor: cardColor, borderRadius: 16, padding: 24, alignItems: "center" }}>
+              <Text style={{ fontSize: 18, fontWeight: "bold", color: textColor, marginBottom: 12 }}>모임 참여</Text>
+              <Text style={{ color: infoColor, fontSize: 15, marginBottom: 16 }}>초대 코드를 입력하세요</Text>
+              <TextInput
+                value={inviteCodeInput}
+                onChangeText={setInviteCodeInput}
+                placeholder="초대 코드"
+                placeholderTextColor={infoColor}
+                style={{
+                  width: "100%",
+                  borderWidth: 1,
+                  borderColor: isDark ? "#333" : "#e0e0e0",
+                  borderRadius: 8,
+                  paddingHorizontal: 14,
+                  paddingVertical: 12,
+                  fontSize: 16,
+                  color: textColor,
+                  marginBottom: 20,
+                  backgroundColor: isDark ? "#23262F" : "#fff",
+                }}
+                autoCapitalize="characters"
+                autoFocus
+                editable={!joinLoading}
+                returnKeyType="done"
+                onSubmitEditing={handleJoinMeeting}
+              />
+              <View style={{ flexDirection: "row", justifyContent: "flex-end", width: "100%" }}>
+                <TouchableOpacity
+                  style={{ paddingVertical: 10, paddingHorizontal: 18, borderRadius: 8, marginRight: 8 }}
+                  onPress={() => {
+                    setJoinModalVisible(false);
+                    setInviteCodeInput("");
+                  }}
+                  disabled={joinLoading}
+                >
+                  <Text style={{ color: infoColor, fontSize: 16 }}>취소</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: inviteCodeInput.trim() && !joinLoading ? "#4F8EF7" : isDark ? "#333" : "#e0e0e0",
+                    paddingVertical: 10,
+                    paddingHorizontal: 18,
+                    borderRadius: 8,
+                  }}
+                  onPress={handleJoinMeeting}
+                  disabled={!inviteCodeInput.trim() || joinLoading}
+                >
+                  <Text style={{ color: inviteCodeInput.trim() && !joinLoading ? "#fff" : infoColor, fontSize: 16 }}>참여</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
       </View>
     </SafeAreaView>
   );
@@ -296,6 +357,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     flex: 1,
     marginRight: 8,
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#4F8EF7",
   },
   createBtnText: {
     color: "#fff",
@@ -385,14 +449,15 @@ const styles = StyleSheet.create({
   joinBtn: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "transparent",
-    borderWidth: 2,
-    borderColor: "#4F8EF7",
+    backgroundColor: "#fff",
     borderRadius: 24,
     paddingVertical: 14,
     paddingHorizontal: 24,
     flex: 1,
     marginLeft: 8,
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#4F8EF7",
   },
   joinBtnText: {
     color: "#4F8EF7",

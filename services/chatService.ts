@@ -12,10 +12,11 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
-import { db, storage } from "../config/firebase";
+import { db } from "../config/firebase";
 import { removeUndefined } from "../services/meetingService";
 import { ChatRoom, Message, useChatStore } from "../stores/chatStore";
+
+const PRESIGN_SERVER = process.env.EXPO_PUBLIC_PRESIGN_SERVER || "http://localhost:3001";
 
 export class ChatService {
   // 메시지 전송
@@ -98,14 +99,21 @@ export class ChatService {
     try {
       const response = await fetch(imageUri);
       const blob = await response.blob();
-
-      const fileName = `chat/${meetingId}/${Date.now()}.jpg`;
-      const storageRef = ref(storage!, fileName);
-
-      await uploadBytes(storageRef, blob);
-      const downloadURL = await getDownloadURL(storageRef);
-
-      return downloadURL;
+      const fileName = `chat-images/${meetingId}/${Date.now()}-${Math.floor(Math.random() * 10000)}.jpg`;
+      // 1. presign 서버에서 presigned URL 요청
+      const presignRes = await fetch(`${PRESIGN_SERVER}/presign?fileName=${encodeURIComponent(fileName)}&contentType=image/jpeg`);
+      const { url } = await presignRes.json();
+      // 2. presigned URL로 업로드
+      const uploadRes = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "image/jpeg" },
+        body: blob,
+      });
+      if (!uploadRes.ok) throw new Error("R2 presigned URL 업로드 실패");
+      // 3. R2 public URL 생성 (endpoint는 .env에 EXPO_PUBLIC_R2_PUBLIC_ENDPOINT로 지정)
+      const publicEndpoint = process.env.EXPO_PUBLIC_R2_PUBLIC_ENDPOINT || "https://<accountid>.r2.cloudflarestorage.com";
+      const imageUrl = `${publicEndpoint}/${fileName}`;
+      return imageUrl;
     } catch (error) {
       console.error("이미지 업로드 오류:", error);
       throw error;

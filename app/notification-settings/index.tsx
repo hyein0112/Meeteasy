@@ -184,8 +184,8 @@ export default function NotificationSettingsScreen() {
             </View>
 
             {quietHours && (
-              <View style={styles.quietHoursInfo}>
-                <Text style={[styles.quietHoursText, { color: infoColor }]}>
+              <View style={[styles.quietHoursInfo, { backgroundColor: isDark ? "#23262e" : "#f8f9fa" }]}>
+                <Text style={[styles.quietHoursText, { color: isDark ? textColor : infoColor }]}>
                   {quietStart} ~ {quietEnd} (알림이 울리지 않습니다)
                 </Text>
               </View>

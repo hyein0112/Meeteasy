@@ -123,16 +123,6 @@ export default function InviteScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* 채팅방 입장 */}
-        <View style={[styles.card, { backgroundColor: cardColor }]}>
-          <Text style={[styles.cardTitle, { color: textColor }]}>채팅방</Text>
-          <Text style={[styles.chatDescription, { color: infoColor }]}>참석자들과 일정을 조율하고 소통할 수 있습니다.</Text>
-          <TouchableOpacity style={styles.chatButton} onPress={goToChat}>
-            <MaterialCommunityIcons name="chat" size={20} color="#fff" />
-            <Text style={styles.chatButtonText}>채팅방 입장하기</Text>
-          </TouchableOpacity>
-        </View>
-
         {/* 완료 버튼 */}
         <TouchableOpacity style={styles.completeButton} onPress={() => router.push("/(tabs)/home")}>
           <Text style={styles.completeButtonText}>완료</Text>

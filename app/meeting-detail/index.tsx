@@ -166,6 +166,29 @@ export default function MeetingDetailScreen() {
     setShowActionMenu(false);
   };
 
+  // 모임 삭제 함수
+  const deleteMeeting = () => {
+    if (!meeting) return;
+    Alert.alert("모임 삭제", "정말로 이 모임을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.", [
+      { text: "취소", style: "cancel" },
+      {
+        text: "삭제",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await MeetingService.deleteMeeting(meeting.id);
+            Alert.alert("알림", "모임이 삭제되었습니다.");
+            router.push("/(tabs)/home");
+          } catch (error) {
+            console.error("모임 삭제 오류:", error);
+            Alert.alert("오류", "모임 삭제에 실패했습니다.");
+          }
+        },
+      },
+    ]);
+    setShowActionMenu(false);
+  };
+
   if (isLoading) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: bgColor }]}>
@@ -186,9 +209,29 @@ export default function MeetingDetailScreen() {
     );
   }
 
-  const confirmedCount = meeting.participants.filter((p) => p.status === "confirmed").length;
-  const pendingCount = meeting.participants.filter((p) => p.status === "pending").length;
-  const declinedCount = meeting.participants.filter((p) => p.status === "declined").length;
+  // 참석자 현황(집계/뱃지/리스트)와 확정 일정에 대한 참석/미정/불참 버튼 및 상태 선택 UI/로직을 복구
+  let confirmedUserIds: string[] = [];
+  if (meeting.status === "confirmed" && meeting.confirmedDate) {
+    const confirmedOption = meeting.scheduleOptions?.find(
+      (option) =>
+        option.date && meeting.confirmedDate && new Date(option.date).toDateString() === new Date(meeting.confirmedDate).toDateString()
+    );
+    confirmedUserIds = confirmedOption?.votes ?? [];
+  }
+  // 참석자 현황 집계
+  let confirmedCount = 0,
+    pendingCount = 0,
+    declinedCount = 0;
+  if (meeting.status === "confirmed" && meeting.confirmedDate) {
+    confirmedCount = confirmedUserIds.length;
+    pendingCount =
+      meeting.participants.length - confirmedUserIds.length - meeting.participants.filter((p) => p.status === "declined").length;
+    declinedCount = meeting.participants.filter((p) => p.status === "declined").length;
+  } else {
+    confirmedCount = meeting.participants.filter((p) => p.status === "confirmed").length;
+    pendingCount = meeting.participants.filter((p) => p.status === "pending").length;
+    declinedCount = meeting.participants.filter((p) => p.status === "declined").length;
+  }
 
   const isCreator = user?.uid === meeting.creatorId;
 
@@ -222,6 +265,30 @@ export default function MeetingDetailScreen() {
                 </Text>
               </View>
             </View>
+            {/* 초대 코드 표시 */}
+            <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8, marginBottom: 4 }}>
+              <MaterialCommunityIcons name="key-variant" size={18} color={infoColor} style={{ marginRight: 4 }} />
+              <Text style={{ color: infoColor, fontSize: 15, fontWeight: "bold", marginRight: 8 }}>초대 코드:</Text>
+              <Text selectable style={{ color: textColor, fontSize: 16, fontWeight: "bold", letterSpacing: 2, marginRight: 8 }}>
+                {meeting.inviteCode}
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  if (meeting.inviteCode) {
+                    // 클립보드 복사
+                    if (typeof navigator !== "undefined" && navigator.clipboard) {
+                      navigator.clipboard.writeText(meeting.inviteCode);
+                      Alert.alert("복사됨", "초대 코드가 복사되었습니다.");
+                    } else {
+                      Alert.alert("복사 불가", "클립보드 복사를 지원하지 않는 환경입니다.");
+                    }
+                  }
+                }}
+                style={{ padding: 4 }}
+              >
+                <MaterialCommunityIcons name="content-copy" size={18} color={infoColor} />
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.meetingInfo}>
               {meeting.confirmedDate && (
@@ -246,62 +313,6 @@ export default function MeetingDetailScreen() {
                   <Text style={[styles.infoText, { color: textColor }]}>{meeting.description}</Text>
                 </View>
               )}
-            </View>
-          </View>
-
-          {/* 참석자 현황 */}
-          <View style={[styles.card, { backgroundColor: cardColor }]}>
-            <Text style={[styles.cardTitle, { color: textColor }]}>참석자 현황</Text>
-
-            <View style={[styles.participantStats, { backgroundColor: isDark ? "#23262F" : "#f8f9fa" }]}>
-              <View style={styles.statItem}>
-                <Text style={[styles.statNumber, { color: "#4CAF50" }]}>{confirmedCount}</Text>
-                <Text style={[styles.statLabel, { color: infoColor }]}>확정</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={[styles.statNumber, { color: "#FF9800" }]}>{pendingCount}</Text>
-                <Text style={[styles.statLabel, { color: infoColor }]}>미정</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={[styles.statNumber, { color: "#F44336" }]}>{declinedCount}</Text>
-                <Text style={[styles.statLabel, { color: infoColor }]}>불참</Text>
-              </View>
-            </View>
-
-            <View style={styles.participantList}>
-              {meeting.participants.map((participant, index) => (
-                <View
-                  key={participant.id}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    marginBottom: 10,
-                  }}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center" }}>
-                    <View style={[styles.participantDot, { backgroundColor: `hsl(${index * 60}, 70%, 60%)` }]} />
-                    <Text style={[styles.participantName, { color: textColor, fontWeight: "bold", marginLeft: 8 }]}>
-                      {participant.name}
-                    </Text>
-                  </View>
-                  <View
-                    style={{
-                      backgroundColor:
-                        participant.status === "confirmed" ? "#4CAF50" : participant.status === "pending" ? "#FFC107" : "#F44336",
-                      borderRadius: 8,
-                      paddingHorizontal: 12,
-                      paddingVertical: 4,
-                      minWidth: 40,
-                      alignItems: "center",
-                    }}
-                  >
-                    <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 13 }}>
-                      {participant.status === "confirmed" ? "확정" : participant.status === "pending" ? "미정" : "불참"}
-                    </Text>
-                  </View>
-                </View>
-              ))}
             </View>
           </View>
 
@@ -337,10 +348,10 @@ export default function MeetingDetailScreen() {
                 <Text style={[styles.actionButtonText, { color: "#fff" }]}>채팅</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#FF9800" }]} onPress={goToVote}>
+              {/* <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#FF9800" }]} onPress={goToVote}>
                 <MaterialCommunityIcons name="calendar-clock" size={24} color="#fff" />
                 <Text style={[styles.actionButtonText, { color: "#fff" }]}>일정 투표</Text>
-              </TouchableOpacity>
+              </TouchableOpacity> */}
             </View>
 
             <View style={styles.actionButtonRow}>
@@ -382,6 +393,13 @@ export default function MeetingDetailScreen() {
                 <MaterialCommunityIcons name="delete" size={20} color="#F44336" />
                 <Text style={[styles.actionMenuText, { color: "#F44336" }]}>모임 나가기</Text>
               </TouchableOpacity>
+
+              {isCreator && (
+                <TouchableOpacity style={styles.actionMenuItem} onPress={deleteMeeting}>
+                  <MaterialCommunityIcons name="delete-forever" size={20} color="#F44336" />
+                  <Text style={[styles.actionMenuText, { color: "#F44336" }]}>모임 삭제</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </TouchableOpacity>
         </Modal>
@@ -460,83 +478,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "600",
     marginBottom: 16,
-  },
-  participantStats: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    marginBottom: 20,
-    paddingVertical: 16,
-    backgroundColor: "#f8f9fa",
-    borderRadius: 8,
-  },
-  statItem: {
-    alignItems: "center",
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: "bold",
-  },
-  statLabel: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-  participantList: {
-    gap: 12,
-  },
-  participantItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  participantInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  participantDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  participantDetails: {
-    flex: 1,
-  },
-  participantName: {
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  participantStatus: {
-    fontSize: 12,
-    fontWeight: "500",
-    marginTop: 2,
-  },
-  participantActions: {
-    alignItems: "flex-end",
-    gap: 8,
-  },
-  statusChip: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusChipText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  statusButtons: {
-    flexDirection: "row",
-    gap: 4,
-  },
-  statusButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  statusButtonText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "600",
   },
   locationInfo: {
     marginBottom: 16,

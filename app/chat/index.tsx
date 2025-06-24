@@ -1,11 +1,9 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
   FlatList,
-  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -109,41 +107,6 @@ export default function ChatScreen() {
     }
   };
 
-  const sendImage = async () => {
-    if (!user || !meetingId) return;
-    if (!userProfile?.name) {
-      Alert.alert("알림", "이름 정보가 로드될 때까지 잠시만 기다려주세요.");
-      return;
-    }
-    try {
-      // 갤러리 접근 권한 요청
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-      if (permissionResult.granted === false) {
-        Alert.alert("권한 필요", "갤러리 접근 권한이 필요합니다.");
-        return;
-      }
-
-      // 이미지 피커 실행
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const selectedImage = result.assets[0];
-
-        // 이미지 업로드 및 메시지 전송
-        await ChatService.sendImageMessage(meetingId, user.uid, getSenderName(), user.photoURL || undefined, selectedImage.uri);
-      }
-    } catch (error) {
-      console.error("이미지 전송 오류:", error);
-      Alert.alert("오류", "이미지 전송에 실패했습니다.");
-    }
-  };
-
   const sendNotice = async () => {
     if (!noticeText.trim() || !user || !meetingId) return;
     if (!userProfile?.name) {
@@ -227,11 +190,6 @@ export default function ChatScreen() {
             },
           ]}
         >
-          {item.type === "image" && item.imageURL && (
-            <TouchableOpacity>
-              <Image source={{ uri: item.imageURL }} style={styles.messageImage} resizeMode="cover" />
-            </TouchableOpacity>
-          )}
           {item.content && <Text style={[styles.messageText, { color: isMe ? "#fff" : textColor }]}>{item.content}</Text>}
         </View>
         <Text style={[styles.timestamp, { color: infoColor }]}>
@@ -269,15 +227,28 @@ export default function ChatScreen() {
 
         {/* 공지사항 */}
         {latestNotice && (
-          <View style={[styles.pinnedNotice, { backgroundColor: "#FFF3CD" }]}>
+          <View
+            style={[
+              styles.pinnedNotice,
+              {
+                backgroundColor: isDark ? "#2d2d2d" : "#FFF3CD",
+                borderColor: isDark ? "#FFD600" : "#FFEE58",
+                borderWidth: 1.5,
+                shadowColor: isDark ? "#FFD600" : "#856404",
+                shadowOpacity: 0.15,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 2 },
+              },
+            ]}
+          >
             <View style={styles.pinnedNoticeHeader}>
-              <MaterialCommunityIcons name="pin" size={16} color="#856404" />
-              <Text style={[styles.pinnedNoticeTitle, { color: "#856404" }]}>공지사항</Text>
+              <MaterialCommunityIcons name="pin" size={16} color={isDark ? "#FFD600" : "#856404"} />
+              <Text style={[styles.pinnedNoticeTitle, { color: isDark ? "#FFD600" : "#856404" }]}>공지사항</Text>
             </View>
-            <Text style={[styles.pinnedNoticeContent, { color: "#856404" }]} numberOfLines={2}>
+            <Text style={[styles.pinnedNoticeContent, { color: isDark ? "#FFD600" : "#856404" }]} numberOfLines={2}>
               {latestNotice.content}
             </Text>
-            <Text style={[styles.pinnedNoticeTime, { color: "#856404" }]}>
+            <Text style={[styles.pinnedNoticeTime, { color: isDark ? "#FFD600" : "#856404" }]}>
               {new Date(latestNotice.createdAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
             </Text>
           </View>
@@ -298,10 +269,6 @@ export default function ChatScreen() {
 
         {/* 메시지 입력 */}
         <View style={[styles.inputContainer, { backgroundColor: cardColor }]}>
-          <TouchableOpacity style={styles.attachButton} onPress={sendImage}>
-            <MaterialCommunityIcons name="image" size={24} color={infoColor} />
-          </TouchableOpacity>
-
           <TextInput
             style={[styles.textInput, { color: textColor, borderColor: isDark ? "#333" : "#e0e0e0" }]}
             placeholder="메시지를 입력하세요..."
@@ -527,20 +494,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#e0e0e0",
     marginVertical: 4,
   },
-  attachButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 8,
-  },
-  messageImage: {
-    width: 200,
-    height: 150,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
   noticeContainer: {
     alignItems: "center",
     marginVertical: 8,
@@ -625,10 +578,11 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   pinnedNotice: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#FFEAA7",
+    marginHorizontal: 12,
+    marginTop: 10,
+    marginBottom: 4,
+    padding: 12,
+    borderRadius: 10,
   },
   pinnedNoticeHeader: {
     flexDirection: "row",

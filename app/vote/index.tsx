@@ -2,7 +2,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { Timestamp } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
-import { Alert, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View, useColorScheme } from "react-native";
+import { Alert, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useColorScheme } from "react-native";
 import { Meeting, MeetingService, ScheduleOption } from "../../services/meetingService";
 import { useAuthStore } from "../../stores/authStore";
 
@@ -55,10 +55,15 @@ export default function VoteScreen() {
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState("오후 2시");
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newDate, setNewDate] = useState("");
+  const [newTime, setNewTime] = useState("");
 
   const meetingId = params.meetingId as string;
   const meetingName = params.meetingName as string;
+
+  const isCreator = !!user && !!meeting && meeting.creatorId === user.uid;
 
   useEffect(() => {
     if (meetingId) {
@@ -297,6 +302,25 @@ export default function VoteScreen() {
     }
   };
 
+  const handleAddOption = async () => {
+    if (!newDate.trim()) return;
+    setIsLoading(true);
+    try {
+      await MeetingService.addScheduleOption(meetingId, {
+        id: Date.now().toString(),
+        date: new Date(newDate),
+        time: newTime,
+        votes: [],
+      });
+      setNewDate("");
+      setNewTime("");
+    } catch (e) {
+      Alert.alert("오류", "일정 추가에 실패했습니다.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // StyleSheet를 함수 내부에서 동적으로 생성
   const styles = React.useMemo(
     () =>
@@ -488,27 +512,25 @@ export default function VoteScreen() {
         },
         fabContainer: {
           position: "absolute",
-          bottom: 30,
-          left: 0,
-          right: 0,
-          alignItems: "center",
+          bottom: 32,
+          right: 24,
           zIndex: 10,
         },
         fab: {
           flexDirection: "row",
           alignItems: "center",
-          backgroundColor: isDark ? "#2466d1" : "#4F8EF7",
-          borderRadius: 24,
-          paddingHorizontal: 24,
+          backgroundColor: "#4F8EF7",
+          borderRadius: 28,
           paddingVertical: 14,
-          elevation: 4,
+          paddingHorizontal: 22,
           shadowColor: "#000",
-          shadowOpacity: 0.15,
-          shadowRadius: 8,
+          shadowOpacity: 0.12,
+          shadowRadius: 6,
+          elevation: 4,
         },
         fabText: {
           color: "#fff",
-          fontSize: 17,
+          fontSize: 16,
           fontWeight: "bold",
           marginLeft: 8,
         },
@@ -678,6 +700,21 @@ export default function VoteScreen() {
           fontWeight: "600",
           color: textColor,
         },
+        input: {
+          borderWidth: 1,
+          borderRadius: 8,
+          paddingHorizontal: 12,
+          paddingVertical: 10,
+          fontSize: 16,
+          marginBottom: 10,
+        },
+        addButton: {
+          backgroundColor: "#4F8EF7",
+          borderRadius: 8,
+          paddingVertical: 12,
+          alignItems: "center",
+          marginTop: 4,
+        },
       }),
     [isDark, cardColor, infoColor, textColor, bgColor]
   );
@@ -695,6 +732,29 @@ export default function VoteScreen() {
       </View>
 
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+        {/* 일정 후보가 없을 때만 상단에 입력창 노출 */}
+        {meeting && meeting.status !== "confirmed" && isCreator && scheduleOptions.length === 0 && (
+          <View style={[styles.card, { backgroundColor: cardColor }]}>
+            <Text style={{ color: textColor, fontWeight: "bold", marginBottom: 8 }}>일정 후보 추가</Text>
+            <TextInput
+              value={newDate}
+              onChangeText={setNewDate}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={infoColor}
+              style={[styles.input, { color: textColor, borderColor: infoColor }]}
+            />
+            <TextInput
+              value={newTime}
+              onChangeText={setNewTime}
+              placeholder="시간(선택)"
+              placeholderTextColor={infoColor}
+              style={[styles.input, { color: textColor, borderColor: infoColor }]}
+            />
+            <TouchableOpacity style={styles.addButton} onPress={handleAddOption} disabled={isLoading}>
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>추가</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         {/* 확정 일정 강조 */}
         {confirmedOption && (
           <View
@@ -842,134 +902,91 @@ export default function VoteScreen() {
         <View style={{ height: 100 }} /> {/* 플로팅 버튼 영역 확보 */}
       </ScrollView>
 
-      {/* 하단 플로팅 일정 추가 버튼 */}
-      <View style={styles.fabContainer}>
-        <TouchableOpacity style={styles.fab} onPress={() => setShowCalendar(true)}>
-          <MaterialCommunityIcons name="plus" size={28} color="#fff" />
-          <Text style={styles.fabText}>일정 추가</Text>
-        </TouchableOpacity>
-      </View>
+      {/* 일정 후보가 1개 이상일 때만 하단 플로팅 버튼 */}
+      {meeting && meeting.status !== "confirmed" && isCreator && scheduleOptions.length > 0 && (
+        <View style={styles.fabContainer}>
+          <TouchableOpacity style={styles.fab} onPress={() => setShowAddModal(true)}>
+            <MaterialCommunityIcons name="plus" size={28} color="#fff" />
+            <Text style={styles.fabText}>일정 추가</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
-      {/* 캘린더 모달 */}
-      <Modal visible={showCalendar} animationType="slide" presentationStyle="pageSheet">
-        <SafeAreaView style={[styles.modalContainer, { backgroundColor: bgColor }]}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowCalendar(false)}>
-              <Text style={[styles.modalButton, { color: textColor }]}>취소</Text>
-            </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: textColor }]}>날짜 선택</Text>
-            <TouchableOpacity onPress={addSelectedDates}>
-              <Text style={[styles.modalButton, { color: "#4F8EF7" }]}>추가</Text>
-            </TouchableOpacity>
+      {/* 일정 추가 모달 */}
+      <Modal visible={showAddModal} transparent animationType="fade" onRequestClose={() => setShowAddModal(false)}>
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.4)" }}>
+          <View style={{ width: 320, backgroundColor: cardColor, borderRadius: 16, padding: 24, alignItems: "center" }}>
+            <Text style={{ fontSize: 18, fontWeight: "bold", color: textColor, marginBottom: 12 }}>일정 후보 추가</Text>
+            <TextInput
+              value={newDate}
+              onChangeText={setNewDate}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={infoColor}
+              style={{
+                width: "100%",
+                borderWidth: 1,
+                borderColor: isDark ? "#333" : "#e0e0e0",
+                borderRadius: 8,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+                fontSize: 16,
+                color: textColor,
+                marginBottom: 20,
+                backgroundColor: isDark ? "#23262F" : "#fff",
+              }}
+              autoFocus
+              editable={!isLoading}
+              returnKeyType="done"
+              onSubmitEditing={handleAddOption}
+            />
+            <TextInput
+              value={newTime}
+              onChangeText={setNewTime}
+              placeholder="시간(선택)"
+              placeholderTextColor={infoColor}
+              style={{
+                width: "100%",
+                borderWidth: 1,
+                borderColor: isDark ? "#333" : "#e0e0e0",
+                borderRadius: 8,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+                fontSize: 16,
+                color: textColor,
+                marginBottom: 20,
+                backgroundColor: isDark ? "#23262F" : "#fff",
+              }}
+              editable={!isLoading}
+              returnKeyType="done"
+              onSubmitEditing={handleAddOption}
+            />
+            <View style={{ flexDirection: "row", justifyContent: "flex-end", width: "100%" }}>
+              <TouchableOpacity
+                style={{ paddingVertical: 10, paddingHorizontal: 18, borderRadius: 8, marginRight: 8 }}
+                onPress={() => {
+                  setShowAddModal(false);
+                  setNewDate("");
+                  setNewTime("");
+                }}
+                disabled={isLoading}
+              >
+                <Text style={{ color: infoColor, fontSize: 16 }}>취소</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: newDate.trim() && !isLoading ? "#4F8EF7" : isDark ? "#333" : "#e0e0e0",
+                  paddingVertical: 10,
+                  paddingHorizontal: 18,
+                  borderRadius: 8,
+                }}
+                onPress={handleAddOption}
+                disabled={!newDate.trim() || isLoading}
+              >
+                <Text style={{ color: newDate.trim() && !isLoading ? "#fff" : infoColor, fontSize: 16 }}>추가</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-
-          <ScrollView style={styles.calendarContainer} showsVerticalScrollIndicator={false}>
-            {/* 월 네비게이션 */}
-            <View style={styles.monthNavigation}>
-              <TouchableOpacity onPress={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}>
-                <MaterialCommunityIcons name="chevron-left" size={24} color={textColor} />
-              </TouchableOpacity>
-              <Text style={[styles.monthTitle, { color: textColor }]}>
-                {currentMonth.getFullYear()}년 {currentMonth.getMonth() + 1}월
-              </Text>
-              <TouchableOpacity onPress={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}>
-                <MaterialCommunityIcons name="chevron-right" size={24} color={textColor} />
-              </TouchableOpacity>
-            </View>
-
-            {/* 요일 헤더 */}
-            <View style={styles.weekHeader}>
-              {["일", "월", "화", "수", "목", "금", "토"].map((day) => (
-                <Text key={day} style={[styles.weekDay, { color: infoColor }]}>
-                  {day}
-                </Text>
-              ))}
-            </View>
-
-            {/* 캘린더 그리드 */}
-            <View style={styles.calendarGrid}>
-              {calendarDates.map((date, index) => (
-                <View key={index} style={styles.calendarDayContainer}>
-                  <TouchableOpacity
-                    style={[
-                      styles.calendarDay,
-                      !date.isCurrentMonth && styles.otherMonthDay,
-                      date.isToday && styles.today,
-                      date.isSelected && styles.selectedDay,
-                    ]}
-                    onPress={() => date.isCurrentMonth && toggleDate(date.date)}
-                    disabled={!date.isCurrentMonth}
-                  >
-                    <Text
-                      style={[
-                        styles.dayText,
-                        { color: date.isCurrentMonth ? textColor : infoColor },
-                        date.isToday && styles.todayText,
-                        date.isSelected && styles.selectedDayText,
-                      ]}
-                    >
-                      {date.day}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
-
-            {/* 선택된 날짜 표시 */}
-            {selectedDates.length > 0 && (
-              <View style={[styles.selectedDatesContainer, { backgroundColor: cardColor }]}>
-                <Text style={[styles.selectedDatesTitle, { color: textColor }]}>선택된 날짜 {(selectedDates ?? []).length}일</Text>
-                <View style={styles.selectedDatesList}>
-                  {(selectedDates ?? []).map((date, index) => {
-                    const dateObj = new Date(date);
-                    const month = dateObj.getMonth() + 1;
-                    const day = dateObj.getDate();
-                    const dayOfWeek = ["일", "월", "화", "수", "목", "금", "토"][dateObj.getDay()];
-                    return (
-                      <View key={index} style={styles.selectedDateItem}>
-                        <Text style={[styles.selectedDateText, { color: textColor }]}>
-                          {month}월 {day}일 ({dayOfWeek})
-                        </Text>
-                        <TouchableOpacity onPress={() => toggleDate(date)}>
-                          <MaterialCommunityIcons name="close" size={16} color="#ff3b30" />
-                        </TouchableOpacity>
-                      </View>
-                    );
-                  })}
-                </View>
-              </View>
-            )}
-
-            {/* 시간 선택 */}
-            <View style={styles.timeSelection}>
-              <Text style={[styles.timeTitle, { color: textColor }]}>시간 선택</Text>
-              <View style={styles.timeGrid}>
-                {timeOptions.map((time) => (
-                  <TouchableOpacity
-                    key={time}
-                    style={[
-                      styles.timeOption,
-                      selectedTime === time && { backgroundColor: "#4F8EF7" },
-                      time === "상관없음" && { backgroundColor: selectedTime === time ? "#4F8EF7" : "#f0f0f0" },
-                    ]}
-                    onPress={() => setSelectedTime(time)}
-                  >
-                    <Text
-                      style={[
-                        styles.timeText,
-                        {
-                          color: selectedTime === time ? "#fff" : time === "상관없음" ? "#666" : textColor,
-                        },
-                      ]}
-                    >
-                      {time}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          </ScrollView>
-        </SafeAreaView>
+        </View>
       </Modal>
     </SafeAreaView>
   );

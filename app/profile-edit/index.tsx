@@ -1,24 +1,13 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import * as ImagePicker from "expo-image-picker";
 import { router, Stack } from "expo-router";
 import React, { useState } from "react";
-import { Alert, Image, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, useColorScheme, View } from "react-native";
+import { Alert, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, useColorScheme, View } from "react-native";
+import { useAuthStore } from "../../stores/authStore";
 
 interface UserProfile {
   name: string;
   email: string;
-  phone: string;
-  profileImage?: string;
-  bio: string;
 }
-
-const mockProfile: UserProfile = {
-  name: "김철수",
-  email: "kim@example.com",
-  phone: "010-1234-5678",
-  profileImage: "https://via.placeholder.com/150/4F8EF7/FFFFFF?text=프로필",
-  bio: "안녕하세요! 모임을 좋아하는 김철수입니다.",
-};
 
 export default function ProfileEditScreen() {
   const colorScheme = useColorScheme();
@@ -29,34 +18,12 @@ export default function ProfileEditScreen() {
   const infoColor = isDark ? "#bbb" : "#888";
   const borderColor = isDark ? "#333" : "#e0e0e0";
 
-  const [profile, setProfile] = useState<UserProfile>(mockProfile);
+  const { userProfile } = useAuthStore();
+  const [profile, setProfile] = useState<UserProfile>({
+    name: userProfile?.name || "",
+    email: userProfile?.email || "",
+  });
   const [isEditing, setIsEditing] = useState(false);
-
-  const pickImage = async () => {
-    try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-      if (permissionResult.granted === false) {
-        Alert.alert("권한 필요", "갤러리 접근 권한이 필요합니다.");
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const selectedImage = result.assets[0];
-        setProfile((prev) => ({ ...prev, profileImage: selectedImage.uri }));
-      }
-    } catch (error) {
-      console.error("이미지 선택 오류:", error);
-      Alert.alert("오류", "이미지를 선택하는 중 오류가 발생했습니다.");
-    }
-  };
 
   const saveProfile = () => {
     // 실제로는 서버에 저장하는 로직이 들어가야 함
@@ -65,7 +32,10 @@ export default function ProfileEditScreen() {
   };
 
   const cancelEdit = () => {
-    setProfile(mockProfile); // 원래 데이터로 복원
+    setProfile({
+      name: userProfile?.name || "",
+      email: userProfile?.email || "",
+    });
     setIsEditing(false);
   };
 
@@ -98,23 +68,9 @@ export default function ProfileEditScreen() {
         </View>
 
         <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-          {/* 프로필 사진 */}
-          <View style={[styles.profileImageSection, { backgroundColor: cardColor }]}>
-            <View style={styles.profileImageContainer}>
-              <Image source={{ uri: profile.profileImage }} style={styles.profileImage} />
-              {isEditing && (
-                <TouchableOpacity style={styles.editImageButton} onPress={pickImage}>
-                  <MaterialCommunityIcons name="camera" size={20} color="#fff" />
-                </TouchableOpacity>
-              )}
-            </View>
-            <Text style={[styles.profileName, { color: textColor }]}>{profile.name}</Text>
-          </View>
-
           {/* 프로필 정보 */}
           <View style={[styles.infoSection, { backgroundColor: cardColor }]}>
             <Text style={[styles.sectionTitle, { color: textColor }]}>기본 정보</Text>
-
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: infoColor }]}>이름</Text>
               <TextInput
@@ -133,7 +89,6 @@ export default function ProfileEditScreen() {
                 placeholderTextColor={infoColor}
               />
             </View>
-
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: infoColor }]}>이메일</Text>
               <TextInput
@@ -153,71 +108,6 @@ export default function ProfileEditScreen() {
                 keyboardType="email-address"
               />
             </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: infoColor }]}>전화번호</Text>
-              <TextInput
-                style={[
-                  styles.textInput,
-                  {
-                    color: textColor,
-                    borderColor: borderColor,
-                    backgroundColor: isEditing ? (isDark ? "#2A2D36" : "#f8f9fa") : "transparent",
-                  },
-                ]}
-                value={profile.phone}
-                onChangeText={(text) => setProfile((prev) => ({ ...prev, phone: text }))}
-                editable={isEditing}
-                placeholder="전화번호를 입력하세요"
-                placeholderTextColor={infoColor}
-                keyboardType="phone-pad"
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: infoColor }]}>자기소개</Text>
-              <TextInput
-                style={[
-                  styles.textArea,
-                  {
-                    color: textColor,
-                    borderColor: borderColor,
-                    backgroundColor: isEditing ? (isDark ? "#2A2D36" : "#f8f9fa") : "transparent",
-                  },
-                ]}
-                value={profile.bio}
-                onChangeText={(text) => setProfile((prev) => ({ ...prev, bio: text }))}
-                editable={isEditing}
-                placeholder="자기소개를 입력하세요"
-                placeholderTextColor={infoColor}
-                multiline
-                numberOfLines={4}
-                textAlignVertical="top"
-              />
-            </View>
-          </View>
-
-          {/* 계정 설정 */}
-          <View style={[styles.infoSection, { backgroundColor: cardColor }]}>
-            <Text style={[styles.sectionTitle, { color: textColor }]}>계정 설정</Text>
-
-            <TouchableOpacity style={styles.settingItem}>
-              <MaterialCommunityIcons name="lock" size={20} color={infoColor} />
-              <Text style={[styles.settingText, { color: textColor }]}>비밀번호 변경</Text>
-              <MaterialCommunityIcons name="chevron-right" size={20} color={infoColor} />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.settingItem}>
-              <MaterialCommunityIcons name="shield" size={20} color={infoColor} />
-              <Text style={[styles.settingText, { color: textColor }]}>개인정보 보호</Text>
-              <MaterialCommunityIcons name="chevron-right" size={20} color={infoColor} />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.settingItem}>
-              <MaterialCommunityIcons name="delete" size={20} color="#F44336" />
-              <Text style={[styles.settingText, { color: "#F44336" }]}>계정 삭제</Text>
-              <MaterialCommunityIcons name="chevron-right" size={20} color="#F44336" />
-            </TouchableOpacity>
           </View>
         </ScrollView>
       </SafeAreaView>
