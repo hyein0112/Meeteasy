@@ -1,5 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { Timestamp } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import { Alert, FlatList, RefreshControl, SafeAreaView, StyleSheet, Text, TouchableOpacity, View, useColorScheme } from "react-native";
 import { enableFirestoreNetwork } from "../../config/firebase";
@@ -15,60 +16,30 @@ export default function HomeScreen() {
   const textColor = isDark ? "#fff" : "#222";
   const infoColor = isDark ? "#bbb" : "#888";
 
-  const { user } = useAuthStore();
+  const { user, userProfile } = useAuthStore();
   const { meetings, setMeetings, setLoading } = useMeetingStore();
   const [refreshing, setRefreshing] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<"connected" | "error" | "loading">("loading");
 
   useEffect(() => {
     if (user) {
-      loadUserMeetings();
-      setupRealtimeListener();
+      setConnectionStatus("loading");
+      const unsubscribe = MeetingService.subscribeToUserMeetings(user.uid, (meetings) => {
+        setMeetings(meetings);
+        setConnectionStatus("connected");
+      });
+      return () => unsubscribe();
     }
   }, [user]);
 
-  const loadUserMeetings = async () => {
-    if (!user) return;
-
-    try {
-      setLoading(true);
-      setConnectionStatus("loading");
-      const userMeetings = await MeetingService.fetchUserMeetings(user.uid);
-      setMeetings(userMeetings);
-      setConnectionStatus("connected");
-    } catch (error) {
-      console.error("모임 목록 로드 오류:", error);
-      setConnectionStatus("error");
-      Alert.alert("연결 오류", "Firestore 연결에 실패했습니다. 네트워크 연결을 확인하고 다시 시도해주세요.", [
-        { text: "취소", style: "cancel" },
-        { text: "재시도", onPress: loadUserMeetings },
-      ]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const setupRealtimeListener = () => {
-    if (!user) return;
-
-    const unsubscribe = MeetingService.subscribeToUserMeetings(user.uid, (meetings) => {
-      setMeetings(meetings);
-      setConnectionStatus("connected");
-    });
-
-    return unsubscribe;
-  };
-
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadUserMeetings();
     setRefreshing(false);
   };
 
   const handleReconnect = async () => {
     try {
       await enableFirestoreNetwork();
-      await loadUserMeetings();
     } catch (error) {
       console.error("재연결 실패:", error);
       Alert.alert("재연결 실패", "네트워크 연결을 확인하고 다시 시도해주세요.");
@@ -88,17 +59,51 @@ export default function HomeScreen() {
     }
   };
 
-  const getDday = (date?: Date) => {
+  const getDday = (date?: Date | Timestamp | null) => {
     if (!date) return null;
+
+    let dateObj: Date;
+
+    // Timestamp 객체인 경우 Date로 변환
+    if (date instanceof Timestamp) {
+      dateObj = date.toDate();
+    } else if (date instanceof Date) {
+      dateObj = date;
+    } else {
+      return null;
+    }
+
+    // 유효한 날짜인지 확인
+    if (isNaN(dateObj.getTime())) {
+      return null;
+    }
+
     const today = new Date();
-    const diffTime = date.getTime() - today.getTime();
+    const diffTime = dateObj.getTime() - today.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return diffDays;
   };
 
-  const formatDate = (date?: Date) => {
+  const formatDate = (date?: Date | Timestamp | null) => {
     if (!date) return "일정 미정";
-    return date.toLocaleDateString("ko-KR");
+
+    let dateObj: Date;
+
+    // Timestamp 객체인 경우 Date로 변환
+    if (date instanceof Timestamp) {
+      dateObj = date.toDate();
+    } else if (date instanceof Date) {
+      dateObj = date;
+    } else {
+      return "일정 미정";
+    }
+
+    // 유효한 날짜인지 확인
+    if (isNaN(dateObj.getTime())) {
+      return "일정 미정";
+    }
+
+    return dateObj.toLocaleDateString("ko-KR");
   };
 
   if (!user) {
@@ -124,10 +129,78 @@ export default function HomeScreen() {
           </View>
         )}
 
-        <TouchableOpacity style={styles.createBtn} onPress={() => router.push("/create-meeting/index")}>
-          <MaterialCommunityIcons name="plus" size={24} color="#fff" />
-          <Text style={styles.createBtnText}>새 모임 만들기</Text>
-        </TouchableOpacity>
+        <View style={styles.buttonRow}>
+          <TouchableOpacity style={styles.createBtn} onPress={() => router.push("/create-meeting")}>
+            <MaterialCommunityIcons name="plus" size={24} color="#fff" />
+            <Text style={styles.createBtnText}>새 모임 만들기</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.joinBtn}
+            onPress={() => {
+              Alert.prompt(
+                "모임 참여",
+                "초대 코드를 입력하세요",
+                [
+                  { text: "취소", style: "cancel" },
+                  {
+                    text: "참여",
+                    onPress: async (inviteCode) => {
+                      if (!inviteCode || !user) return;
+
+                      try {
+                        const meeting = await MeetingService.findMeetingByInviteCode(inviteCode);
+
+                        if (!meeting) {
+                          Alert.alert("오류", "유효하지 않은 초대 코드입니다.");
+                          return;
+                        }
+
+                        const isAlreadyParticipant = meeting.participants.some((p) => p.id === user.uid);
+                        if (isAlreadyParticipant) {
+                          Alert.alert("알림", "이미 참여 중인 모임입니다.");
+                          router.push({
+                            pathname: "/meeting-detail",
+                            params: { meetingId: meeting.id },
+                          } as any);
+                          return;
+                        }
+
+                        await MeetingService.addParticipant(meeting.id, {
+                          id: user.uid,
+                          name: userProfile?.name || user.displayName || user.email || "알 수 없음",
+                          email: user.email || undefined,
+                          profileImage: user.photoURL || undefined,
+                          status: "pending",
+                          joinedAt: new Date(),
+                        });
+
+                        Alert.alert("성공", "모임에 참여했습니다!", [
+                          {
+                            text: "확인",
+                            onPress: () => {
+                              router.push({
+                                pathname: "/meeting-detail",
+                                params: { meetingId: meeting.id },
+                              } as any);
+                            },
+                          },
+                        ]);
+                      } catch (error) {
+                        console.error("모임 참여 오류:", error);
+                        Alert.alert("오류", "모임 참여에 실패했습니다.");
+                      }
+                    },
+                  },
+                ],
+                "plain-text"
+              );
+            }}
+          >
+            <MaterialCommunityIcons name="account-group" size={20} color="#4F8EF7" />
+            <Text style={styles.joinBtnText}>모임 참여</Text>
+          </TouchableOpacity>
+        </View>
 
         <FlatList
           data={meetings}
@@ -135,22 +208,30 @@ export default function HomeScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           renderItem={({ item }) => {
             const dday = getDday(item.confirmedDate);
+            const isCreator = user?.uid === item.creatorId;
+            const currentUserParticipant = item.participants.find((p) => p.id === user?.uid);
+
             return (
               <TouchableOpacity
                 style={[styles.card, { backgroundColor: cardColor }]}
                 onPress={() =>
                   router.push({
-                    pathname: "/meeting-detail/index",
+                    pathname: "/meeting-detail",
                     params: { meetingId: item.id },
                   } as any)
                 }
               >
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.name, { color: textColor }]}>{item.title}</Text>
+                  <View style={styles.cardHeader}>
+                    <Text style={[styles.name, { color: textColor }]} numberOfLines={1} ellipsizeMode="tail">
+                      {item.title}
+                    </Text>
+                  </View>
                   <Text style={[styles.info, { color: infoColor }]}>
                     {formatDate(item.confirmedDate)} · {getStatusText(item.status)}
                   </Text>
                   <Text style={[styles.description, { color: infoColor }]}>{item.description || "설명 없음"}</Text>
+                  <Text style={[styles.creatorInfo, { color: infoColor }]}>방장: {item.creatorName}</Text>
                 </View>
                 <View style={styles.rightBox}>
                   {dday !== null && <Text style={styles.dday}>{`D-${dday}`}</Text>}
@@ -213,8 +294,8 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     paddingVertical: 14,
     paddingHorizontal: 24,
-    alignSelf: "center",
-    marginBottom: 18,
+    flex: 1,
+    marginRight: 8,
   },
   createBtnText: {
     color: "#fff",
@@ -232,6 +313,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 6,
     elevation: 2,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   name: {
     fontSize: 18,
@@ -289,5 +375,42 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 16,
     fontWeight: "600",
+  },
+  buttonRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 18,
+  },
+  joinBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "transparent",
+    borderWidth: 2,
+    borderColor: "#4F8EF7",
+    borderRadius: 24,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    flex: 1,
+    marginLeft: 8,
+  },
+  joinBtnText: {
+    color: "#4F8EF7",
+    fontSize: 17,
+    fontWeight: "bold",
+    marginLeft: 8,
+  },
+  roleBadge: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  roleBadgeText: {
+    fontSize: 12,
+    fontWeight: "bold",
+  },
+  creatorInfo: {
+    fontSize: 12,
+    marginTop: 4,
   },
 });

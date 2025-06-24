@@ -1,43 +1,9 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Stack, router, useLocalSearchParams } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Alert, Linking, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View, useColorScheme } from "react-native";
-
-interface Participant {
-  name: string;
-  color: string;
-  status: "confirmed" | "pending" | "declined"; // 확정, 미정, 불참
-  profileImage?: string;
-}
-
-interface MeetingDetail {
-  id: string;
-  name: string;
-  date: string;
-  time: string;
-  location: string;
-  locationAddress: string;
-  description: string;
-  participants: Participant[];
-  isConfirmed: boolean;
-}
-
-const mockMeeting: MeetingDetail = {
-  id: "1",
-  name: "스터디 모임",
-  date: "1월 25일 (목)",
-  time: "오후 3시",
-  location: "스타벅스 강남점",
-  locationAddress: "서울특별시 강남구 테헤란로 123",
-  description: "React Native 스터디 모임입니다. 각자 준비한 내용을 공유하고 토론해보겠습니다.",
-  participants: [
-    { name: "김철수", color: "#FF6B6B", status: "confirmed" },
-    { name: "이영희", color: "#4ECDC4", status: "confirmed" },
-    { name: "박민수", color: "#45B7D1", status: "pending" },
-    { name: "나", color: "#96CEB4", status: "confirmed" },
-  ],
-  isConfirmed: true,
-};
+import { Meeting, MeetingService } from "../../services/meetingService";
+import { useAuthStore } from "../../stores/authStore";
 
 export default function MeetingDetailScreen() {
   const colorScheme = useColorScheme();
@@ -48,9 +14,27 @@ export default function MeetingDetailScreen() {
   const infoColor = isDark ? "#bbb" : "#888";
 
   const params = useLocalSearchParams();
-  const [meeting, setMeeting] = useState<MeetingDetail>(mockMeeting);
+  const { user } = useAuthStore();
+  const [meeting, setMeeting] = useState<Meeting | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [showActionMenu, setShowActionMenu] = useState(false);
+
+  const meetingId = params.meetingId as string;
+
+  // 실시간 리스너로 meeting 최신화
+  useEffect(() => {
+    if (!meetingId) return;
+    setIsLoading(true);
+    const unsubscribe = MeetingService.subscribeToMeeting(meetingId, (m) => {
+      setMeeting(m);
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
+  }, [meetingId]);
+
+  // 현재 사용자 참가자 정보
+  const currentUserParticipant = meeting?.participants.find((p) => p.id === user?.uid) || null;
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -78,15 +62,41 @@ export default function MeetingDetailScreen() {
     }
   };
 
+  const changeMyStatus = async (newStatus: "confirmed" | "pending" | "declined") => {
+    if (!user || !meeting) return;
+
+    try {
+      await MeetingService.updateParticipantStatus(meeting.id, user.uid, newStatus);
+
+      // 로컬 상태 업데이트
+      setMeeting((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          participants: prev.participants.map((p) => (p.id === user.uid ? { ...p, status: newStatus } : p)),
+        };
+      });
+
+      Alert.alert("성공", `참석 상태가 "${getStatusText(newStatus)}"로 변경되었습니다.`);
+    } catch (error) {
+      console.error("참석 상태 변경 오류:", error);
+      Alert.alert("오류", "참석 상태 변경에 실패했습니다.");
+    }
+  };
+
   const openNavigation = () => {
-    const url = `https://maps.apple.com/?address=${encodeURIComponent(meeting.locationAddress)}`;
+    if (!meeting?.location?.address) return;
+
+    const url = `https://maps.apple.com/?address=${encodeURIComponent(meeting.location.address)}`;
     Linking.openURL(url).catch(() => {
       Alert.alert("오류", "지도 앱을 열 수 없습니다.");
     });
   };
 
   const openMaps = () => {
-    const url = `https://maps.google.com/?q=${encodeURIComponent(meeting.locationAddress)}`;
+    if (!meeting?.location?.address) return;
+
+    const url = `https://maps.google.com/?q=${encodeURIComponent(meeting.location.address)}`;
     Linking.openURL(url).catch(() => {
       Alert.alert("오류", "지도 앱을 열 수 없습니다.");
     });
@@ -97,69 +107,90 @@ export default function MeetingDetailScreen() {
     Alert.alert("알림", "캘린더에 일정이 추가되었습니다!");
   };
 
-  const changeStatus = (participantName: string, newStatus: "confirmed" | "pending" | "declined") => {
-    setMeeting((prev) => ({
-      ...prev,
-      participants: prev.participants.map((p) => (p.name === participantName ? { ...p, status: newStatus } : p)),
-    }));
-  };
-
-  const cancelMeeting = () => {
-    Alert.alert("모임 취소", "정말로 이 모임을 취소하시겠습니까?", [
-      { text: "아니오", style: "cancel" },
-      {
-        text: "취소",
-        style: "destructive",
-        onPress: () => {
-          setMeeting((prev) => ({ ...prev, isConfirmed: false }));
-          Alert.alert("알림", "모임이 취소되었습니다.");
-        },
-      },
-    ]);
-  };
-
   const goToChat = () => {
+    if (!meeting) return;
+
     router.push({
       pathname: "/chat",
-      params: { meetingName: meeting.name },
+      params: {
+        meetingId: meeting.id,
+        meetingName: meeting.title,
+      },
+    } as any);
+  };
+
+  const goToVote = () => {
+    if (!meeting) return;
+
+    router.push({
+      pathname: "/vote",
+      params: {
+        meetingId: meeting.id,
+        meetingName: meeting.title,
+      },
     } as any);
   };
 
   const shareMeeting = () => {
-    const shareText = `${meeting.name}\n${meeting.date} ${meeting.time}\n${meeting.location}\n\nMeetEasy 앱에서 확인하세요!`;
+    if (!meeting) return;
+
+    const shareText = `${meeting.title}\n초대 코드: ${meeting.inviteCode}\n\nMeetEasy 앱에서 확인하세요!`;
     // 실제로는 Share API를 사용해야 함
     Alert.alert("공유", "모임 정보가 복사되었습니다!");
     setShowActionMenu(false);
   };
 
-  const editMeeting = () => {
-    Alert.alert("편집", "모임 편집 기능은 준비 중입니다.");
-    setShowActionMenu(false);
-  };
+  const leaveMeeting = () => {
+    if (!meeting || !user) return;
 
-  const deleteMeeting = () => {
-    Alert.alert("모임 삭제", "정말로 이 모임을 삭제하시겠습니까?", [
+    Alert.alert("모임 나가기", "정말로 이 모임을 나가시겠습니까?", [
       { text: "취소", style: "cancel" },
       {
-        text: "삭제",
+        text: "나가기",
         style: "destructive",
-        onPress: () => {
-          Alert.alert("알림", "모임이 삭제되었습니다.");
-          router.back();
+        onPress: async () => {
+          try {
+            // 참석자 목록에서 제거
+            const updatedParticipants = meeting.participants.filter((p) => p.id !== user.uid);
+            await MeetingService.updateMeeting(meeting.id, { participants: updatedParticipants });
+
+            Alert.alert("알림", "모임에서 나갔습니다.");
+            router.push("/(tabs)/home");
+          } catch (error) {
+            console.error("모임 나가기 오류:", error);
+            Alert.alert("오류", "모임을 나가는데 실패했습니다.");
+          }
         },
       },
     ]);
     setShowActionMenu(false);
   };
 
-  const exportToCalendar = () => {
-    Alert.alert("알림", "캘린더 파일이 생성되었습니다!");
-    setShowActionMenu(false);
-  };
+  if (isLoading) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: bgColor }]}>
+        <View style={styles.loadingContainer}>
+          <Text style={[styles.loadingText, { color: textColor }]}>모임 정보를 불러오는 중...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!meeting) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: bgColor }]}>
+        <View style={styles.loadingContainer}>
+          <Text style={[styles.loadingText, { color: textColor }]}>모임을 찾을 수 없습니다.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const confirmedCount = meeting.participants.filter((p) => p.status === "confirmed").length;
   const pendingCount = meeting.participants.filter((p) => p.status === "pending").length;
   const declinedCount = meeting.participants.filter((p) => p.status === "declined").length;
+
+  const isCreator = user?.uid === meeting.creatorId;
 
   return (
     <>
@@ -179,26 +210,42 @@ export default function MeetingDetailScreen() {
           {/* 모임 정보 */}
           <View style={[styles.card, { backgroundColor: cardColor }]}>
             <View style={styles.meetingHeader}>
-              <Text style={[styles.meetingName, { color: textColor }]}>{meeting.name}</Text>
-              <View style={[styles.statusBadge, { backgroundColor: meeting.isConfirmed ? "#4CAF50" : "#F44336" }]}>
-                <Text style={styles.statusBadgeText}>{meeting.isConfirmed ? "확정" : "취소됨"}</Text>
+              <Text style={[styles.meetingName, { color: textColor }]}>{meeting.title}</Text>
+              <View
+                style={[
+                  styles.statusBadge,
+                  { backgroundColor: meeting.status === "confirmed" ? "#4CAF50" : meeting.status === "cancelled" ? "#F44336" : "#FF9800" },
+                ]}
+              >
+                <Text style={styles.statusBadgeText}>
+                  {meeting.status === "confirmed" ? "확정" : meeting.status === "cancelled" ? "취소됨" : "일정 조율 중"}
+                </Text>
               </View>
             </View>
 
             <View style={styles.meetingInfo}>
-              <View style={styles.infoRow}>
-                <MaterialCommunityIcons name="calendar" size={20} color={infoColor} />
-                <Text style={[styles.infoText, { color: textColor }]}>
-                  {meeting.date} {meeting.time}
-                </Text>
-              </View>
+              {meeting.confirmedDate && (
+                <View style={styles.infoRow}>
+                  <MaterialCommunityIcons name="calendar" size={20} color={infoColor} />
+                  <Text style={[styles.infoText, { color: textColor }]}>
+                    {meeting.confirmedDate.toLocaleDateString("ko-KR")} {meeting.confirmedTime}
+                  </Text>
+                </View>
+              )}
 
-              <View style={styles.infoRow}>
-                <MaterialCommunityIcons name="map-marker" size={20} color={infoColor} />
-                <Text style={[styles.infoText, { color: textColor }]}>{meeting.location}</Text>
-              </View>
+              {meeting.location?.name && (
+                <View style={styles.infoRow}>
+                  <MaterialCommunityIcons name="map-marker" size={20} color={infoColor} />
+                  <Text style={[styles.infoText, { color: textColor }]}>{meeting.location.name}</Text>
+                </View>
+              )}
 
-              <Text style={[styles.description, { color: infoColor }]}>{meeting.description}</Text>
+              {meeting.description && (
+                <View style={styles.infoRow}>
+                  <MaterialCommunityIcons name="text" size={20} color={infoColor} />
+                  <Text style={[styles.infoText, { color: textColor }]}>{meeting.description}</Text>
+                </View>
+              )}
             </View>
           </View>
 
@@ -206,7 +253,7 @@ export default function MeetingDetailScreen() {
           <View style={[styles.card, { backgroundColor: cardColor }]}>
             <Text style={[styles.cardTitle, { color: textColor }]}>참석자 현황</Text>
 
-            <View style={styles.participantStats}>
+            <View style={[styles.participantStats, { backgroundColor: isDark ? "#23262F" : "#f8f9fa" }]}>
               <View style={styles.statItem}>
                 <Text style={[styles.statNumber, { color: "#4CAF50" }]}>{confirmedCount}</Text>
                 <Text style={[styles.statLabel, { color: infoColor }]}>확정</Text>
@@ -222,40 +269,36 @@ export default function MeetingDetailScreen() {
             </View>
 
             <View style={styles.participantList}>
-              {meeting.participants.map((participant) => (
-                <View key={participant.name} style={styles.participantItem}>
-                  <View style={styles.participantInfo}>
-                    <View style={[styles.participantDot, { backgroundColor: participant.color }]} />
-                    <Text style={[styles.participantName, { color: textColor }]}>{participant.name}</Text>
+              {meeting.participants.map((participant, index) => (
+                <View
+                  key={participant.id}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: 10,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <View style={[styles.participantDot, { backgroundColor: `hsl(${index * 60}, 70%, 60%)` }]} />
+                    <Text style={[styles.participantName, { color: textColor, fontWeight: "bold", marginLeft: 8 }]}>
+                      {participant.name}
+                    </Text>
                   </View>
-
-                  <View style={styles.participantActions}>
-                    <View style={[styles.statusChip, { backgroundColor: getStatusColor(participant.status) }]}>
-                      <Text style={styles.statusChipText}>{getStatusText(participant.status)}</Text>
-                    </View>
-
-                    {participant.name === "나" && (
-                      <View style={styles.statusButtons}>
-                        <TouchableOpacity
-                          style={[styles.statusButton, { backgroundColor: "#4CAF50" }]}
-                          onPress={() => changeStatus("나", "confirmed")}
-                        >
-                          <Text style={styles.statusButtonText}>참석</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.statusButton, { backgroundColor: "#FF9800" }]}
-                          onPress={() => changeStatus("나", "pending")}
-                        >
-                          <Text style={styles.statusButtonText}>미정</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.statusButton, { backgroundColor: "#F44336" }]}
-                          onPress={() => changeStatus("나", "declined")}
-                        >
-                          <Text style={styles.statusButtonText}>불참</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
+                  <View
+                    style={{
+                      backgroundColor:
+                        participant.status === "confirmed" ? "#4CAF50" : participant.status === "pending" ? "#FFC107" : "#F44336",
+                      borderRadius: 8,
+                      paddingHorizontal: 12,
+                      paddingVertical: 4,
+                      minWidth: 40,
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 13 }}>
+                      {participant.status === "confirmed" ? "확정" : participant.status === "pending" ? "미정" : "불참"}
+                    </Text>
                   </View>
                 </View>
               ))}
@@ -263,45 +306,65 @@ export default function MeetingDetailScreen() {
           </View>
 
           {/* 장소 정보 */}
-          <View style={[styles.card, { backgroundColor: cardColor }]}>
-            <Text style={[styles.cardTitle, { color: textColor }]}>장소</Text>
+          {meeting.location && (
+            <View style={[styles.card, { backgroundColor: cardColor }]}>
+              <Text style={[styles.cardTitle, { color: textColor }]}>장소</Text>
 
-            <View style={styles.locationInfo}>
-              <Text style={[styles.locationName, { color: textColor }]}>{meeting.location}</Text>
-              <Text style={[styles.locationAddress, { color: infoColor }]}>{meeting.locationAddress}</Text>
+              <View style={styles.locationInfo}>
+                <Text style={[styles.locationName, { color: textColor }]}>{meeting.location.name}</Text>
+                <Text style={[styles.locationAddress, { color: infoColor }]}>{meeting.location.address}</Text>
+              </View>
+
+              <View style={styles.locationActions}>
+                <TouchableOpacity style={styles.locationButton} onPress={openMaps}>
+                  <MaterialCommunityIcons name="map" size={20} color="#4F8EF7" />
+                  <Text style={[styles.locationButtonText, { color: "#4F8EF7" }]}>지도 보기</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.locationButton} onPress={openNavigation}>
+                  <MaterialCommunityIcons name="navigation" size={20} color="#4CAF50" />
+                  <Text style={[styles.locationButtonText, { color: "#4CAF50" }]}>길찾기</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-
-            <View style={styles.locationActions}>
-              <TouchableOpacity style={styles.locationButton} onPress={openMaps}>
-                <MaterialCommunityIcons name="map" size={20} color="#4F8EF7" />
-                <Text style={[styles.locationButtonText, { color: "#4F8EF7" }]}>지도 보기</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.locationButton} onPress={openNavigation}>
-                <MaterialCommunityIcons name="navigation" size={20} color="#4CAF50" />
-                <Text style={[styles.locationButtonText, { color: "#4CAF50" }]}>길찾기</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          )}
 
           {/* 액션 버튼들 */}
           <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.actionButton} onPress={addToCalendar}>
-              <MaterialCommunityIcons name="calendar-plus" size={20} color="#fff" />
-              <Text style={styles.actionButtonText}>캘린더에 추가</Text>
-            </TouchableOpacity>
+            <View style={styles.actionButtonRow}>
+              <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#4F8EF7" }]} onPress={goToChat}>
+                <MaterialCommunityIcons name="chat" size={24} color="#fff" />
+                <Text style={[styles.actionButtonText, { color: "#fff" }]}>채팅</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionButton} onPress={goToChat}>
-              <MaterialCommunityIcons name="chat" size={20} color="#fff" />
-              <Text style={styles.actionButtonText}>채팅방 입장</Text>
-            </TouchableOpacity>
+              <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#FF9800" }]} onPress={goToVote}>
+                <MaterialCommunityIcons name="calendar-clock" size={24} color="#fff" />
+                <Text style={[styles.actionButtonText, { color: "#fff" }]}>일정 투표</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.actionButtonRow}>
+              {meeting.location?.address && (
+                <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#4CAF50" }]} onPress={() => setShowLocationModal(true)}>
+                  <MaterialCommunityIcons name="map-marker" size={24} color="#fff" />
+                  <Text style={[styles.actionButtonText, { color: "#fff" }]}>위치</Text>
+                </TouchableOpacity>
+              )}
+
+              {meeting.confirmedDate && (
+                <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#9C27B0" }]} onPress={addToCalendar}>
+                  <MaterialCommunityIcons name="calendar-plus" size={24} color="#fff" />
+                  <Text style={[styles.actionButtonText, { color: "#fff" }]}>캘린더</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
-          {/* 모임 취소 버튼 */}
-          {meeting.isConfirmed && (
-            <TouchableOpacity style={styles.cancelButton} onPress={cancelMeeting}>
-              <MaterialCommunityIcons name="close-circle" size={20} color="#F44336" />
-              <Text style={[styles.cancelButtonText, { color: "#F44336" }]}>모임 취소</Text>
+          {/* 모임 나가기 버튼 */}
+          {currentUserParticipant && (
+            <TouchableOpacity style={styles.cancelButton} onPress={leaveMeeting}>
+              <MaterialCommunityIcons name="exit-to-app" size={20} color="#F44336" />
+              <Text style={[styles.cancelButtonText, { color: "#F44336" }]}>모임 나가기</Text>
             </TouchableOpacity>
           )}
         </ScrollView>
@@ -315,21 +378,9 @@ export default function MeetingDetailScreen() {
                 <Text style={[styles.actionMenuText, { color: textColor }]}>모임 공유</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.actionMenuItem} onPress={editMeeting}>
-                <MaterialCommunityIcons name="pencil" size={20} color={textColor} />
-                <Text style={[styles.actionMenuText, { color: textColor }]}>모임 편집</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.actionMenuItem} onPress={exportToCalendar}>
-                <MaterialCommunityIcons name="calendar-export" size={20} color={textColor} />
-                <Text style={[styles.actionMenuText, { color: textColor }]}>캘린더 내보내기</Text>
-              </TouchableOpacity>
-
-              <View style={styles.actionMenuDivider} />
-
-              <TouchableOpacity style={styles.actionMenuItem} onPress={deleteMeeting}>
+              <TouchableOpacity style={styles.actionMenuItem} onPress={leaveMeeting}>
                 <MaterialCommunityIcons name="delete" size={20} color="#F44336" />
-                <Text style={[styles.actionMenuText, { color: "#F44336" }]}>모임 삭제</Text>
+                <Text style={[styles.actionMenuText, { color: "#F44336" }]}>모임 나가기</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
@@ -447,9 +498,17 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 6,
   },
+  participantDetails: {
+    flex: 1,
+  },
   participantName: {
     fontSize: 16,
     fontWeight: "500",
+  },
+  participantStatus: {
+    fontSize: 12,
+    fontWeight: "500",
+    marginTop: 2,
   },
   participantActions: {
     alignItems: "flex-end",
@@ -512,9 +571,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   actionButtons: {
-    flexDirection: "row",
     gap: 12,
     marginBottom: 20,
+  },
+  actionButtonRow: {
+    flexDirection: "row",
+    gap: 12,
   },
   actionButton: {
     flex: 1,
@@ -522,12 +584,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: "#4F8EF7",
     paddingVertical: 16,
     borderRadius: 12,
   },
   actionButtonText: {
-    color: "#fff",
     fontSize: 16,
     fontWeight: "600",
   },
@@ -575,9 +635,13 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     fontWeight: "500",
   },
-  actionMenuDivider: {
-    height: 1,
-    backgroundColor: "#e0e0e0",
-    marginVertical: 4,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    fontSize: 18,
+    fontWeight: "600",
   },
 });

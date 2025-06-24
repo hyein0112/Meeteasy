@@ -29,9 +29,9 @@ export interface Meeting {
 export interface Participant {
   id: string;
   name: string;
-  email: string;
-  photoURL?: string;
-  status: "pending" | "accepted" | "declined";
+  email?: string;
+  profileImage?: string;
+  status: "confirmed" | "pending" | "declined";
   joinedAt: Date;
 }
 

@@ -17,62 +17,10 @@ import {
   View,
   useColorScheme,
 } from "react-native";
-
-interface Message {
-  id: string;
-  type: "text" | "image" | "notice";
-  text?: string;
-  imageUrl?: string;
-  sender: string;
-  timestamp: string;
-  isMe: boolean;
-  isNotice?: boolean;
-}
-
-const mockMessages: Message[] = [
-  {
-    id: "1",
-    type: "notice",
-    text: "모임 일정 조율을 시작합니다! 토요일 오후 3시에 투표해주세요.",
-    sender: "시스템",
-    timestamp: "14:30",
-    isMe: false,
-    isNotice: true,
-  },
-  {
-    id: "2",
-    type: "text",
-    text: "안녕하세요! 모임 일정 조율 시작해볼까요?",
-    sender: "김철수",
-    timestamp: "14:30",
-    isMe: false,
-  },
-  {
-    id: "3",
-    type: "text",
-    text: "네! 저는 토요일 오후가 좋을 것 같아요",
-    sender: "나",
-    timestamp: "14:32",
-    isMe: true,
-  },
-  {
-    id: "4",
-    type: "image",
-    imageUrl: "https://via.placeholder.com/300x200/4F8EF7/FFFFFF?text=모임+사진",
-    text: "지난번 모임 사진입니다!",
-    sender: "이영희",
-    timestamp: "14:35",
-    isMe: false,
-  },
-  {
-    id: "5",
-    type: "text",
-    text: "저도 토요일 괜찮아요!",
-    sender: "이영희",
-    timestamp: "14:35",
-    isMe: false,
-  },
-];
+import { ChatService } from "../../services/chatService";
+import { Meeting, MeetingService } from "../../services/meetingService";
+import { useAuthStore } from "../../stores/authStore";
+import { Message, useChatStore } from "../../stores/chatStore";
 
 export default function ChatScreen() {
   const colorScheme = useColorScheme();
@@ -83,20 +31,57 @@ export default function ChatScreen() {
   const infoColor = isDark ? "#bbb" : "#888";
 
   const params = useLocalSearchParams();
-  const [messages, setMessages] = useState<Message[]>(mockMessages);
+  const { user, userProfile } = useAuthStore();
+  const { messages, setMessages } = useChatStore();
   const [newMessage, setNewMessage] = useState("");
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [showNoticeModal, setShowNoticeModal] = useState(false);
   const [noticeText, setNoticeText] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [meeting, setMeeting] = useState<Meeting | null>(null);
   const flatListRef = useRef<FlatList>(null);
 
+  const meetingId = params.meetingId as string;
+  const meetingName = params.meetingName as string;
+
+  // 모임 정보 실시간 구독
+  useEffect(() => {
+    if (!meetingId) return;
+    const unsubscribe = MeetingService.subscribeToMeeting(meetingId, (m) => setMeeting(m));
+    return () => unsubscribe();
+  }, [meetingId]);
+
+  useEffect(() => {
+    if (meetingId && user) {
+      loadMessages();
+      // 실시간 메시지 구독
+      const unsubscribe = ChatService.setupMessageListener(meetingId);
+      return () => unsubscribe();
+    }
+  }, [meetingId, user]);
+
+  const loadMessages = async () => {
+    if (!meetingId || !user) return;
+
+    try {
+      setIsLoading(true);
+      const chatMessages = await ChatService.getMessages(meetingId);
+      setMessages(meetingId, chatMessages);
+    } catch (error) {
+      console.error("메시지 로드 오류:", error);
+      Alert.alert("오류", "메시지를 불러오는데 실패했습니다.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // 가장 최근 공지 찾기
-  const latestNotice = messages
-    .filter((msg) => msg.type === "notice")
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+  const latestNotice = messages[meetingId]
+    ?.filter((msg) => msg.type === "notice")
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 
   // 일반 메시지만 필터링 (공지 제외)
-  const regularMessages = messages.filter((msg) => msg.type !== "notice");
+  const regularMessages = messages[meetingId]?.filter((msg) => msg.type !== "notice") || [];
 
   // 새 메시지가 추가될 때 스크롤을 맨 아래로
   useEffect(() => {
@@ -107,25 +92,29 @@ export default function ChatScreen() {
     }
   }, [regularMessages.length]);
 
-  const sendMessage = () => {
-    if (newMessage.trim()) {
-      const message: Message = {
-        id: Date.now().toString(),
-        type: "text",
-        text: newMessage.trim(),
-        sender: "나",
-        timestamp: new Date().toLocaleTimeString("ko-KR", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        isMe: true,
-      };
-      setMessages([...messages, message]);
+  const getSenderName = () => userProfile?.name || user?.displayName || user?.email || "알 수 없음";
+
+  const sendMessage = async () => {
+    if (!newMessage.trim() || !user || !meetingId) return;
+    if (!userProfile?.name) {
+      Alert.alert("알림", "이름 정보가 로드될 때까지 잠시만 기다려주세요.");
+      return;
+    }
+    try {
+      await ChatService.sendMessage(meetingId, user.uid, getSenderName(), user.photoURL || undefined, newMessage.trim());
       setNewMessage("");
+    } catch (error) {
+      console.error("메시지 전송 오류:", error);
+      Alert.alert("오류", "메시지 전송에 실패했습니다.");
     }
   };
 
   const sendImage = async () => {
+    if (!user || !meetingId) return;
+    if (!userProfile?.name) {
+      Alert.alert("알림", "이름 정보가 로드될 때까지 잠시만 기다려주세요.");
+      return;
+    }
     try {
       // 갤러리 접근 권한 요청
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -146,50 +135,35 @@ export default function ChatScreen() {
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const selectedImage = result.assets[0];
 
-        const message: Message = {
-          id: Date.now().toString(),
-          type: "image",
-          imageUrl: selectedImage.uri,
-          text: "사진을 보냈습니다",
-          sender: "나",
-          timestamp: new Date().toLocaleTimeString("ko-KR", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-          isMe: true,
-        };
-        setMessages([...messages, message]);
+        // 이미지 업로드 및 메시지 전송
+        await ChatService.sendImageMessage(meetingId, user.uid, getSenderName(), user.photoURL || undefined, selectedImage.uri);
       }
     } catch (error) {
-      console.error("이미지 선택 오류:", error);
-      Alert.alert("오류", "이미지를 선택하는 중 오류가 발생했습니다.");
+      console.error("이미지 전송 오류:", error);
+      Alert.alert("오류", "이미지 전송에 실패했습니다.");
     }
   };
 
-  const sendNotice = () => {
-    if (noticeText.trim()) {
-      const message: Message = {
-        id: Date.now().toString(),
-        type: "notice",
-        text: noticeText.trim(),
-        sender: "시스템",
-        timestamp: new Date().toLocaleTimeString("ko-KR", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        isMe: false,
-        isNotice: true,
-      };
-      setMessages([...messages, message]);
+  const sendNotice = async () => {
+    if (!noticeText.trim() || !user || !meetingId) return;
+    if (!userProfile?.name) {
+      Alert.alert("알림", "이름 정보가 로드될 때까지 잠시만 기다려주세요.");
+      return;
+    }
+    try {
+      await ChatService.sendNotice(meetingId, user.uid, getSenderName(), user.photoURL || undefined, noticeText.trim());
       setNoticeText("");
       setShowNoticeModal(false);
+    } catch (error) {
+      console.error("공지 전송 오류:", error);
+      Alert.alert("오류", "공지 전송에 실패했습니다.");
     }
   };
 
   const goToMeetingDetail = () => {
     router.push({
       pathname: "/meeting-detail",
-      params: { meetingName: params.meetingName },
+      params: { meetingId },
     } as any);
     setShowActionMenu(false);
   };
@@ -197,7 +171,7 @@ export default function ChatScreen() {
   const goToVote = () => {
     router.push({
       pathname: "/vote",
-      params: { meetingName: params.meetingName },
+      params: { meetingId, meetingName },
     } as any);
     setShowActionMenu(false);
   };
@@ -215,7 +189,7 @@ export default function ChatScreen() {
         text: "삭제",
         style: "destructive",
         onPress: () => {
-          setMessages([]);
+          setMessages(meetingId, []);
           Alert.alert("알림", "채팅 기록이 삭제되었습니다.");
         },
       },
@@ -224,40 +198,45 @@ export default function ChatScreen() {
   };
 
   const renderMessage = ({ item }: { item: Message }) => {
+    const isMe = item.senderId === user?.uid;
+
     if (item.type === "notice") {
       return (
         <View style={styles.noticeContainer}>
-          <View style={[styles.noticeBubble, { backgroundColor: "#FFF3CD" }]}>
-            <View style={styles.noticeHeader}>
-              <MaterialCommunityIcons name="bullhorn" size={16} color="#856404" />
-              <Text style={[styles.noticeText, { color: "#856404" }]}>공지</Text>
-            </View>
-            <Text style={[styles.noticeContent, { color: "#856404" }]}>{item.text}</Text>
-            <Text style={[styles.noticeTimestamp, { color: "#856404" }]}>{item.timestamp}</Text>
+          <View style={styles.noticeContent}>
+            <MaterialCommunityIcons name="bullhorn" size={16} color="#856404" />
+            <Text style={[styles.noticeContent, { color: "#856404" }]}>{item.content}</Text>
+            <Text style={[styles.noticeTimestamp, { color: "#856404" }]}>
+              {new Date(item.createdAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
+            </Text>
           </View>
         </View>
       );
     }
 
     return (
-      <View style={[styles.messageContainer, item.isMe ? styles.myMessage : styles.otherMessage]}>
-        {!item.isMe && <Text style={[styles.senderName, { color: infoColor }]}>{item.sender}</Text>}
+      <View style={[styles.messageContainer, isMe ? styles.myMessage : styles.otherMessage]}>
+        {!isMe && <Text style={[styles.senderName, { color: infoColor }]}>{item.senderName}</Text>}
 
         <View
           style={[
             styles.messageBubble,
             {
-              backgroundColor: item.isMe ? "#4F8EF7" : cardColor,
-              alignSelf: item.isMe ? "flex-end" : "flex-start",
+              backgroundColor: isMe ? "#4F8EF7" : cardColor,
+              borderColor: isMe ? "#4F8EF7" : "#e0e0e0",
             },
           ]}
         >
-          {item.type === "image" && item.imageUrl && (
-            <Image source={{ uri: item.imageUrl }} style={styles.messageImage} resizeMode="cover" />
+          {item.type === "image" && item.imageURL && (
+            <TouchableOpacity>
+              <Image source={{ uri: item.imageURL }} style={styles.messageImage} resizeMode="cover" />
+            </TouchableOpacity>
           )}
-          {item.text && <Text style={[styles.messageText, { color: item.isMe ? "#fff" : textColor }]}>{item.text}</Text>}
+          {item.content && <Text style={[styles.messageText, { color: isMe ? "#fff" : textColor }]}>{item.content}</Text>}
         </View>
-        <Text style={[styles.timestamp, { color: infoColor }]}>{item.timestamp}</Text>
+        <Text style={[styles.timestamp, { color: infoColor }]}>
+          {new Date(item.createdAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
+        </Text>
       </View>
     );
   };
@@ -267,7 +246,7 @@ export default function ChatScreen() {
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 60 : 100}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 10}
       >
         {/* 헤더 */}
         <View style={[styles.header, { backgroundColor: cardColor }]}>
@@ -275,8 +254,8 @@ export default function ChatScreen() {
             <MaterialCommunityIcons name="arrow-left" size={24} color={textColor} />
           </TouchableOpacity>
           <View style={styles.headerInfo}>
-            <Text style={[styles.meetingName, { color: textColor }]}>{params.meetingName || "모임 채팅"}</Text>
-            <Text style={[styles.participantCount, { color: infoColor }]}>참석자 3명</Text>
+            <Text style={[styles.meetingName, { color: textColor }]}>{meetingName || "모임 채팅"}</Text>
+            <Text style={[styles.participantCount, { color: infoColor }]}>참석자 {meeting?.participants.length}명</Text>
           </View>
           <View style={styles.headerActions}>
             <TouchableOpacity style={styles.noticeButton} onPress={() => setShowNoticeModal(true)}>
@@ -296,9 +275,11 @@ export default function ChatScreen() {
               <Text style={[styles.pinnedNoticeTitle, { color: "#856404" }]}>공지사항</Text>
             </View>
             <Text style={[styles.pinnedNoticeContent, { color: "#856404" }]} numberOfLines={2}>
-              {latestNotice.text}
+              {latestNotice.content}
             </Text>
-            <Text style={[styles.pinnedNoticeTime, { color: "#856404" }]}>{latestNotice.timestamp}</Text>
+            <Text style={[styles.pinnedNoticeTime, { color: "#856404" }]}>
+              {new Date(latestNotice.createdAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
+            </Text>
           </View>
         )}
 
@@ -564,30 +545,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginVertical: 8,
   },
-  noticeBubble: {
-    maxWidth: "90%",
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#FFEAA7",
-  },
-  noticeHeader: {
+  noticeContent: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 4,
   },
-  noticeText: {
-    fontSize: 12,
-    fontWeight: "600",
-    marginLeft: 4,
-  },
-  noticeContent: {
-    fontSize: 14,
-    lineHeight: 18,
-  },
   noticeTimestamp: {
     fontSize: 11,
-    marginTop: 4,
+    marginLeft: 8,
     alignSelf: "flex-end",
   },
   noticeModalOverlay: {

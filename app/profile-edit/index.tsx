@@ -75,7 +75,7 @@ export default function ProfileEditScreen() {
       <SafeAreaView style={[styles.safeArea, { backgroundColor: bgColor }]}>
         {/* 헤더 */}
         <View style={[styles.header, { backgroundColor: cardColor }]}>
-          <TouchableOpacity onPress={() => router.push("/(tabs)/profile")}>
+          <TouchableOpacity onPress={() => router.back()}>
             <MaterialCommunityIcons name="arrow-left" size={24} color={textColor} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: textColor }]}>프로필 편집</Text>

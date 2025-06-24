@@ -2,6 +2,8 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import { Alert, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useColorScheme } from "react-native";
+import { MeetingService } from "../../services/meetingService";
+import { useAuthStore } from "../../stores/authStore";
 
 export default function CreateMeetingScreen() {
   const colorScheme = useColorScheme();
@@ -11,26 +13,77 @@ export default function CreateMeetingScreen() {
   const textColor = isDark ? "#fff" : "#222";
   const borderColor = isDark ? "#333" : "#e0e0e0";
 
+  const { user, userProfile } = useAuthStore();
   const [meetingName, setMeetingName] = useState("");
   const [purpose, setPurpose] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
 
-  const createMeeting = () => {
+  const createMeeting = async () => {
+    if (!user) {
+      Alert.alert("로그인 필요", "모임을 생성하려면 로그인이 필요합니다.");
+      router.push("/onboarding");
+      return;
+    }
+
     if (!meetingName.trim()) {
       Alert.alert("알림", "모임명을 입력해주세요.");
       return;
     }
 
-    // 모임 생성 후 초대 화면으로 이동
-    const meetingData = {
-      name: meetingName,
-      purpose,
-      createdAt: new Date().toISOString(),
-    };
+    setIsCreating(true);
 
-    router.push({
-      pathname: "/invite",
-      params: { meetingData: JSON.stringify(meetingData) },
-    } as any);
+    try {
+      // 사용자의 실제 이름 가져오기
+      const creatorName = userProfile?.name || user.displayName || user.email || "알 수 없음";
+      // 방장도 참석자로 추가
+      const creatorParticipant = {
+        id: user.uid,
+        name: creatorName,
+        email: user.email || undefined,
+        profileImage: user.photoURL || undefined,
+        status: "pending" as const,
+        joinedAt: new Date(),
+      };
+
+      // Firestore에 모임 생성
+      const meetingData = {
+        title: meetingName,
+        description: purpose,
+        creatorId: user.uid,
+        creatorName: creatorName,
+        status: "planning" as const,
+        participants: [creatorParticipant], // 방장도 포함!
+        scheduleOptions: [],
+      };
+
+      const meetingId = await MeetingService.createMeeting(meetingData);
+
+      // 생성된 모임 정보 가져오기
+      const createdMeeting = await MeetingService.getMeeting(meetingId);
+
+      if (!createdMeeting) {
+        throw new Error("모임 생성 후 정보를 가져올 수 없습니다.");
+      }
+
+      // 초대 화면으로 이동
+      router.push({
+        pathname: "/invite",
+        params: {
+          meetingData: JSON.stringify({
+            id: createdMeeting.id,
+            name: createdMeeting.title,
+            purpose: createdMeeting.description,
+            inviteCode: createdMeeting.inviteCode,
+            createdAt: createdMeeting.createdAt.toISOString(),
+          }),
+        },
+      } as any);
+    } catch (error) {
+      console.error("모임 생성 오류:", error);
+      Alert.alert("오류", "모임 생성에 실패했습니다. 다시 시도해주세요.");
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   return (
@@ -69,8 +122,16 @@ export default function CreateMeetingScreen() {
         </View>
 
         {/* 생성 버튼 */}
-        <TouchableOpacity style={styles.createButton} onPress={createMeeting}>
-          <Text style={styles.createButtonText}>모임 생성하기</Text>
+        <TouchableOpacity
+          style={[styles.createButton, isCreating && styles.createButtonDisabled]}
+          onPress={createMeeting}
+          disabled={isCreating}
+        >
+          {isCreating ? (
+            <Text style={styles.createButtonText}>생성 중...</Text>
+          ) : (
+            <Text style={styles.createButtonText}>모임 생성하기</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -124,6 +185,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 20,
     marginBottom: 40,
+  },
+  createButtonDisabled: {
+    backgroundColor: "#ccc",
   },
   createButtonText: {
     color: "#fff",

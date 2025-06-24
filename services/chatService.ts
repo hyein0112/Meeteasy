@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { db, storage } from "../config/firebase";
+import { removeUndefined } from "../services/meetingService";
 import { ChatRoom, Message, useChatStore } from "../stores/chatStore";
 
 export class ChatService {
@@ -40,7 +41,7 @@ export class ChatService {
         createdAt: serverTimestamp(),
       };
 
-      const messageRef = await addDoc(collection(db, "messages"), messageData);
+      const messageRef = await addDoc(collection(db!, "messages"), removeUndefined(messageData));
 
       const newMessage: Message = {
         ...messageData,
@@ -76,7 +77,7 @@ export class ChatService {
         createdAt: serverTimestamp(),
       };
 
-      const messageRef = await addDoc(collection(db, "messages"), messageData);
+      const messageRef = await addDoc(collection(db!, "messages"), removeUndefined(messageData));
 
       const newMessage: Message = {
         ...messageData,
@@ -99,7 +100,7 @@ export class ChatService {
       const blob = await response.blob();
 
       const fileName = `chat/${meetingId}/${Date.now()}.jpg`;
-      const storageRef = ref(storage, fileName);
+      const storageRef = ref(storage!, fileName);
 
       await uploadBytes(storageRef, blob);
       const downloadURL = await getDownloadURL(storageRef);
@@ -133,7 +134,7 @@ export class ChatService {
   static async getMessages(meetingId: string, limitCount: number = 50): Promise<Message[]> {
     try {
       const messagesQuery = query(
-        collection(db, "messages"),
+        collection(db!, "messages"),
         where("meetingId", "==", meetingId),
         orderBy("createdAt", "desc"),
         limit(limitCount)
@@ -167,7 +168,7 @@ export class ChatService {
   // 메시지 업데이트
   static async updateMessage(meetingId: string, messageId: string, updates: Partial<Message>): Promise<void> {
     try {
-      await updateDoc(doc(db, "messages", messageId), updates);
+      await updateDoc(doc(db!, "messages", messageId), updates);
       useChatStore.getState().updateMessage(meetingId, messageId, updates);
     } catch (error) {
       console.error("메시지 업데이트 오류:", error);
@@ -178,7 +179,7 @@ export class ChatService {
   // 메시지 삭제
   static async deleteMessage(meetingId: string, messageId: string): Promise<void> {
     try {
-      await deleteDoc(doc(db, "messages", messageId));
+      await deleteDoc(doc(db!, "messages", messageId));
       useChatStore.getState().deleteMessage(meetingId, messageId);
     } catch (error) {
       console.error("메시지 삭제 오류:", error);
@@ -206,7 +207,7 @@ export class ChatService {
   static async getUserChatRooms(userId: string): Promise<ChatRoom[]> {
     try {
       const chatRoomsQuery = query(
-        collection(db, "chatRooms"),
+        collection(db!, "chatRooms"),
         where("participants", "array-contains", userId),
         where("isActive", "==", true)
       );
@@ -264,7 +265,7 @@ export class ChatService {
 
   // 실시간 메시지 리스너 설정
   static setupMessageListener(meetingId: string): () => void {
-    return onSnapshot(query(collection(db, "messages"), where("meetingId", "==", meetingId), orderBy("createdAt", "asc")), (snapshot) => {
+    return onSnapshot(query(collection(db!, "messages"), where("meetingId", "==", meetingId), orderBy("createdAt", "asc")), (snapshot) => {
       const messages: Message[] = [];
 
       snapshot.forEach((doc) => {
@@ -285,7 +286,7 @@ export class ChatService {
   // 실시간 채팅방 리스너 설정
   static setupChatRoomListener(userId: string): () => void {
     return onSnapshot(
-      query(collection(db, "chatRooms"), where("participants", "array-contains", userId), where("isActive", "==", true)),
+      query(collection(db!, "chatRooms"), where("participants", "array-contains", userId), where("isActive", "==", true)),
       (snapshot) => {
         const chatRooms: ChatRoom[] = [];
 

@@ -63,7 +63,7 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
   logoBox: { alignItems: "center", marginTop: 32, marginBottom: 8 },
   appTitle: { fontSize: 32, fontWeight: "bold", letterSpacing: 1 },
-  slideWrap: { height: 180, justifyContent: "center", marginTop: 12, marginBottom: 0 },
+  slideWrap: { flex: 2 / 3, justifyContent: "center", marginTop: 12, marginBottom: 0 },
   indicatorRow: { flexDirection: "row", justifyContent: "center", marginTop: 18, marginBottom: 8 },
   indicator: { width: 10, height: 10, borderRadius: 5, marginHorizontal: 5 },
   indicatorActive: { backgroundColor: "#4F8EF7", width: 22 },

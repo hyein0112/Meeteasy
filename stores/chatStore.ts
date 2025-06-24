@@ -66,6 +66,9 @@ export const useChatStore = create<ChatState>()(
       addMessage: (meetingId, message) =>
         set((state) => {
           const currentMessages = state.messages[meetingId] || [];
+          if (currentMessages.some((m) => m.id === message.id)) {
+            return {};
+          }
           const updatedMessages = [...currentMessages, message];
 
           // 채팅방 정보 업데이트

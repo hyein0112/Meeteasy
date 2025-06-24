@@ -1,20 +1,10 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useState } from "react";
+import { Timestamp } from "firebase/firestore";
+import React, { useEffect, useState } from "react";
 import { Alert, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View, useColorScheme } from "react-native";
-
-interface DateCandidate {
-  id: string;
-  date: string;
-  time: string;
-  votes: string[]; // 참석자 이름 배열
-}
-
-interface Participant {
-  name: string;
-  color: string;
-  availableDates: string[]; // 가능한 날짜들 (YYYY-MM-DD 형식)
-}
+import { Meeting, MeetingService, ScheduleOption } from "../../services/meetingService";
+import { useAuthStore } from "../../stores/authStore";
 
 interface CalendarDate {
   date: string; // YYYY-MM-DD 형식
@@ -24,43 +14,30 @@ interface CalendarDate {
   isToday: boolean;
 }
 
-const mockParticipants: Participant[] = [
-  {
-    name: "김철수",
-    color: "#FF6B6B",
-    availableDates: ["2024-01-20", "2024-01-21", "2024-01-25", "2024-01-26"],
-  },
-  {
-    name: "이영희",
-    color: "#4ECDC4",
-    availableDates: ["2024-01-20", "2024-01-22", "2024-01-23", "2024-01-25"],
-  },
-  {
-    name: "박민수",
-    color: "#45B7D1",
-    availableDates: ["2024-01-21", "2024-01-22", "2024-01-24", "2024-01-25"],
-  },
-  {
-    name: "나",
-    color: "#96CEB4",
-    availableDates: ["2024-01-20", "2024-01-22", "2024-01-25", "2024-01-26"],
-  },
-];
+// 날짜 변환 유틸
+function toDateString(date: any) {
+  if (!date) return "";
 
-const mockDateCandidates: DateCandidate[] = [
-  {
-    id: "1",
-    date: "1월 20일 (토)",
-    time: "오후 2시",
-    votes: ["김철수", "이영희", "나"],
-  },
-  {
-    id: "2",
-    date: "1월 25일 (목)",
-    time: "오후 3시",
-    votes: ["김철수", "이영희", "박민수", "나"],
-  },
-];
+  let dateObj: Date;
+
+  // Timestamp 객체인 경우 Date로 변환
+  if (date instanceof Timestamp) {
+    dateObj = date.toDate();
+  } else if (date instanceof Date) {
+    dateObj = date;
+  } else if (typeof date === "string") {
+    dateObj = new Date(date);
+  } else {
+    return "";
+  }
+
+  // 유효한 날짜인지 확인
+  if (isNaN(dateObj.getTime())) {
+    return "";
+  }
+
+  return dateObj.toLocaleDateString("ko-KR");
+}
 
 export default function VoteScreen() {
   const colorScheme = useColorScheme();
@@ -71,11 +48,46 @@ export default function VoteScreen() {
   const infoColor = isDark ? "#bbb" : "#888";
 
   const params = useLocalSearchParams();
-  const [dateCandidates, setDateCandidates] = useState<DateCandidate[]>(mockDateCandidates);
+  const { user } = useAuthStore();
+  const [meeting, setMeeting] = useState<Meeting | null>(null);
+  const [scheduleOptions, setScheduleOptions] = useState<ScheduleOption[]>([]);
   const [showCalendar, setShowCalendar] = useState(false);
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState("오후 2시");
+  const [isLoading, setIsLoading] = useState(true);
+
+  const meetingId = params.meetingId as string;
+  const meetingName = params.meetingName as string;
+
+  useEffect(() => {
+    if (meetingId) {
+      loadMeetingData();
+    }
+  }, [meetingId]);
+
+  const loadMeetingData = async () => {
+    if (!meetingId) return;
+
+    try {
+      setIsLoading(true);
+      const meetingData = await MeetingService.getMeeting(meetingId);
+
+      if (!meetingData) {
+        Alert.alert("오류", "모임을 찾을 수 없습니다.");
+        router.back();
+        return;
+      }
+
+      setMeeting(meetingData);
+      setScheduleOptions(meetingData.scheduleOptions || []);
+    } catch (error) {
+      console.error("모임 데이터 로드 오류:", error);
+      Alert.alert("오류", "모임 정보를 불러오는데 실패했습니다.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const timeOptions = [
     "상관없음",
@@ -130,103 +142,545 @@ export default function VoteScreen() {
     setSelectedDates((prev) => (prev.includes(date) ? prev.filter((d) => d !== date) : [...prev, date]));
   };
 
-  // 팀원들의 가능한 날짜 찾기
-  const findCommonDates = () => {
-    const allDates = new Set<string>();
-    mockParticipants.forEach((participant) => {
-      participant.availableDates.forEach((date) => allDates.add(date));
-    });
-
-    const commonDates: string[] = [];
-    allDates.forEach((date) => {
-      const availableCount = mockParticipants.filter((participant) => participant.availableDates.includes(date)).length;
-      if (availableCount >= 2) {
-        // 최소 2명 이상 가능한 날짜
-        commonDates.push(date);
-      }
-    });
-
-    return commonDates.sort();
-  };
-
-  const commonDates = findCommonDates();
-
   // 선택된 날짜들을 일정 후보로 추가
-  const addSelectedDates = () => {
-    if (selectedDates.length === 0) {
+  const addSelectedDates = async () => {
+    if (!meetingId || selectedDates.length === 0) {
       Alert.alert("알림", "날짜를 선택해주세요.");
       return;
     }
 
-    const newCandidates: DateCandidate[] = selectedDates.map((date) => {
-      const dateObj = new Date(date);
-      const month = dateObj.getMonth() + 1;
-      const day = dateObj.getDate();
-      const dayOfWeek = ["일", "월", "화", "수", "목", "금", "토"][dateObj.getDay()];
+    try {
+      const newOptions: ScheduleOption[] = selectedDates.map((date) => {
+        const dateObj = new Date(date);
+        return {
+          id: Date.now().toString() + Math.random(),
+          date: dateObj,
+          time: selectedTime,
+          votes: [],
+        };
+      });
 
-      return {
-        id: Date.now().toString() + Math.random(),
-        date: `${month}월 ${day}일 (${dayOfWeek})`,
-        time: selectedTime,
-        votes: [],
-      };
-    });
+      // 각 옵션을 Firestore에 추가
+      for (const option of newOptions) {
+        await MeetingService.addScheduleOption(meetingId, option);
+      }
 
-    setDateCandidates([...dateCandidates, ...newCandidates]);
-    setSelectedDates([]);
-    setShowCalendar(false);
+      setScheduleOptions([...scheduleOptions, ...newOptions]);
+      setSelectedDates([]);
+      setShowCalendar(false);
+
+      Alert.alert("성공", "일정 후보가 추가되었습니다.");
+    } catch (error) {
+      console.error("일정 추가 오류:", error);
+      Alert.alert("오류", "일정 추가에 실패했습니다.");
+    }
   };
 
-  const toggleVote = (dateId: string, participantName: string) => {
-    setDateCandidates((prev) =>
-      prev.map((date) => {
-        if (date.id === dateId) {
-          const isVoted = date.votes.includes(participantName);
-          return {
-            ...date,
-            votes: isVoted ? date.votes.filter((v) => v !== participantName) : [...date.votes, participantName],
-          };
-        }
-        return date;
-      })
-    );
+  const toggleVote = async (optionId: string) => {
+    if (!user || !meetingId) return;
+
+    try {
+      await MeetingService.voteSchedule(meetingId, optionId, user.uid);
+
+      // 로컬 상태 업데이트
+      setScheduleOptions((prev) =>
+        prev.map((option) => {
+          if (option.id === optionId) {
+            const isVoted = option.votes.includes(user.uid);
+            return {
+              ...option,
+              votes: isVoted ? option.votes.filter((v) => v !== user.uid) : [...option.votes, user.uid],
+            };
+          }
+          return option;
+        })
+      );
+    } catch (error) {
+      console.error("투표 오류:", error);
+      Alert.alert("오류", "투표에 실패했습니다.");
+    }
   };
 
-  const removeDateCandidate = (dateId: string) => {
+  const removeDateCandidate = async (optionId: string) => {
+    if (!meetingId) return;
+
     Alert.alert("일정 삭제", "이 일정을 삭제하시겠습니까?", [
       { text: "취소", style: "cancel" },
       {
         text: "삭제",
         style: "destructive",
-        onPress: () => {
-          setDateCandidates((prev) => prev.filter((date) => date.id !== dateId));
+        onPress: async () => {
+          try {
+            await MeetingService.removeScheduleOption(meetingId, optionId);
+            setScheduleOptions((prev) => prev.filter((option) => option.id !== optionId));
+            Alert.alert("알림", "일정이 삭제되었습니다.");
+          } catch (error) {
+            console.error("일정 삭제 오류:", error);
+            Alert.alert("오류", "일정 삭제에 실패했습니다.");
+          }
         },
       },
     ]);
   };
 
   const getBestDate = () => {
-    if (dateCandidates.length === 0) {
-      return null;
-    }
-    return dateCandidates.reduce((best, current) => (current.votes.length > best.votes.length ? current : best));
+    if (scheduleOptions.length === 0) return null;
+
+    return scheduleOptions.reduce((best, current) => {
+      return current.votes.length > best.votes.length ? current : best;
+    });
+  };
+
+  const confirmSchedule = async (optionId: string) => {
+    if (!meetingId) return;
+
+    Alert.alert("일정 확정", "이 일정으로 확정하시겠습니까?", [
+      { text: "취소", style: "cancel" },
+      {
+        text: "확정",
+        onPress: async () => {
+          try {
+            await MeetingService.confirmSchedule(meetingId, optionId);
+            Alert.alert("성공", "일정이 확정되었습니다!");
+            router.back();
+          } catch (error) {
+            console.error("일정 확정 오류:", error);
+            Alert.alert("오류", "일정 확정에 실패했습니다.");
+          }
+        },
+      },
+    ]);
   };
 
   const bestDate = getBestDate();
 
   const calendarDates = generateCalendarDates(currentMonth);
 
-  const confirmSchedule = () => {
-    // 일정 확정 후 모임 상세 화면으로 이동
-    router.push({
-      pathname: "/meeting-detail",
-      params: {
-        meetingName: params.meetingName || "모임",
-        confirmedDate: bestDate?.date,
-        confirmedTime: bestDate?.time,
-      },
-    } as any);
+  // participants, scheduleOptions 등 안전하게 접근
+  const participantCount = meeting?.participants?.length ?? 0;
+  const optionCount = scheduleOptions?.length ?? 0;
+
+  // 내가 투표한 일정 후보 id 리스트
+  const myVotedOptionIds = (scheduleOptions ?? [])
+    .filter((option) => (option.votes ?? []).includes(user?.uid || ""))
+    .map((option) => option.id);
+
+  // 확정 일정 후보 (status가 confirmed인 경우)
+  const confirmedOption = (scheduleOptions ?? []).find(
+    (option) =>
+      meeting?.status === "confirmed" &&
+      meeting?.confirmedDate &&
+      option.date &&
+      toDateString(option.date) === toDateString(meeting.confirmedDate)
+  );
+
+  // 내 참가자 정보
+  const currentUserParticipant = meeting?.participants?.find((p) => p.id === user?.uid);
+
+  // 참석 여부 로컬 상태
+  const [localStatus, setLocalStatus] = useState<"confirmed" | "pending" | "declined" | undefined>(currentUserParticipant?.status);
+
+  // Firestore participants가 바뀔 때 localStatus도 동기화
+  useEffect(() => {
+    setLocalStatus(currentUserParticipant?.status);
+  }, [currentUserParticipant?.status]);
+
+  // 참석 여부 변경 함수
+  const handleStatusChange = async (status: "confirmed" | "pending" | "declined") => {
+    if (!meetingId || !user) return;
+    try {
+      setLocalStatus(status); // UI 즉시 반영
+      await MeetingService.updateParticipantStatus(meetingId, user.uid, status);
+    } catch (e) {
+      Alert.alert("오류", "참석 여부 변경에 실패했습니다.");
+      setLocalStatus(currentUserParticipant?.status); // 실패 시 롤백
+    }
   };
+
+  // StyleSheet를 함수 내부에서 동적으로 생성
+  const styles = React.useMemo(
+    () =>
+      StyleSheet.create({
+        safeArea: {
+          flex: 1,
+        },
+        header: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingHorizontal: 20,
+          paddingVertical: 16,
+        },
+        headerTitle: {
+          fontSize: 18,
+          fontWeight: "600",
+        },
+        container: {
+          flex: 1,
+          paddingHorizontal: 20,
+        },
+        card: {
+          borderRadius: 12,
+          padding: 20,
+          marginBottom: 16,
+          shadowColor: isDark ? "#000" : "#000",
+          shadowOpacity: 0.06,
+          shadowRadius: 6,
+          elevation: 2,
+          backgroundColor: cardColor,
+        },
+        participantSchedule: {
+          marginBottom: 12,
+        },
+        participantRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          marginBottom: 8,
+        },
+        participantDot: {
+          width: 12,
+          height: 12,
+          borderRadius: 6,
+          marginRight: 8,
+        },
+        participantName: {
+          fontSize: 14,
+          fontWeight: "500",
+          flex: 1,
+        },
+        weekHeader: {
+          flexDirection: "row",
+          marginBottom: 10,
+          paddingHorizontal: 10,
+        },
+        weekDay: {
+          flex: 1,
+          textAlign: "center",
+          fontSize: 14,
+          fontWeight: "600",
+        },
+        calendarGrid: {
+          flexDirection: "row",
+          flexWrap: "wrap",
+          marginBottom: 30,
+          paddingHorizontal: 10,
+        },
+        calendarDayContainer: {
+          width: "14.285%", // 100% / 7 = 14.285%
+          aspectRatio: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 2,
+        },
+        calendarDay: {
+          width: "100%",
+          height: "100%",
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: 20,
+          overflow: "hidden",
+        },
+        otherMonthDay: {
+          opacity: 0.3,
+        },
+        today: {
+          backgroundColor: isDark ? "#2466d1" : "#4F8EF7",
+        },
+        selectedDay: {
+          backgroundColor: isDark ? "#388e3c" : "#4CAF50",
+        },
+        dayText: {
+          fontSize: 16,
+          fontWeight: "500",
+          textAlign: "center",
+        },
+        todayText: {
+          color: "#fff",
+        },
+        selectedDayText: {
+          color: "#fff",
+        },
+        timeSelection: {
+          marginTop: 20,
+          paddingHorizontal: 10,
+        },
+        timeTitle: {
+          fontSize: 16,
+          fontWeight: "600",
+          marginBottom: 12,
+        },
+        timeGrid: {
+          flexDirection: "row",
+          flexWrap: "wrap",
+          gap: 8,
+        },
+        timeOption: {
+          borderWidth: 1,
+          borderColor: isDark ? "#444" : "#e0e0e0",
+          borderRadius: 8,
+          paddingHorizontal: 12,
+          paddingVertical: 8,
+          minWidth: 80,
+          alignItems: "center",
+        },
+        timeText: {
+          fontSize: 14,
+          fontWeight: "500",
+        },
+        selectedDatesContainer: {
+          marginBottom: 20,
+          padding: 16,
+          borderRadius: 8,
+          marginHorizontal: 10,
+          backgroundColor: cardColor,
+        },
+        selectedDatesTitle: {
+          fontSize: 16,
+          fontWeight: "600",
+          marginBottom: 12,
+        },
+        selectedDatesList: {
+          flexDirection: "row",
+          flexWrap: "wrap",
+          gap: 8,
+        },
+        selectedDateItem: {
+          flexDirection: "row",
+          alignItems: "center",
+          backgroundColor: isDark ? "#333" : "#f0f0f0",
+          borderRadius: 16,
+          paddingHorizontal: 12,
+          paddingVertical: 6,
+          gap: 8,
+        },
+        selectedDateText: {
+          fontSize: 14,
+          fontWeight: "500",
+        },
+        emptyBox: {
+          alignItems: "center",
+          justifyContent: "center",
+          paddingVertical: 40,
+        },
+        emptyText: {
+          fontSize: 18,
+          fontWeight: "600",
+          marginBottom: 8,
+        },
+        emptySubText: {
+          fontSize: 14,
+          color: infoColor,
+          marginBottom: 8,
+        },
+        confirmedCard: {
+          flexDirection: "row",
+          alignItems: "center",
+          borderWidth: 2,
+          borderRadius: 12,
+          padding: 16,
+          marginBottom: 16,
+          borderColor: isDark ? "#388e3c" : "#4CAF50",
+          backgroundColor: isDark ? "#23322a" : "#E3FCEC",
+        },
+        confirmedText: {
+          fontSize: 16,
+          fontWeight: "bold",
+        },
+        fabContainer: {
+          position: "absolute",
+          bottom: 30,
+          left: 0,
+          right: 0,
+          alignItems: "center",
+          zIndex: 10,
+        },
+        fab: {
+          flexDirection: "row",
+          alignItems: "center",
+          backgroundColor: isDark ? "#2466d1" : "#4F8EF7",
+          borderRadius: 24,
+          paddingHorizontal: 24,
+          paddingVertical: 14,
+          elevation: 4,
+          shadowColor: "#000",
+          shadowOpacity: 0.15,
+          shadowRadius: 8,
+        },
+        fabText: {
+          color: "#fff",
+          fontSize: 17,
+          fontWeight: "bold",
+          marginLeft: 8,
+        },
+        voteAvatarBox: {
+          alignItems: "center",
+          marginRight: 12,
+        },
+        voteAvatar: {
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          alignItems: "center",
+          justifyContent: "center",
+          marginBottom: 2,
+          backgroundColor: isDark ? "#444" : "#eee",
+        },
+        voteAvatarName: {
+          fontSize: 12,
+          color: isDark ? "#fff" : "#222",
+        },
+        voteButtonRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          marginTop: 12,
+          gap: 8,
+        },
+        voteButton: {
+          flexDirection: "row",
+          alignItems: "center",
+          backgroundColor: cardColor,
+          borderWidth: 1,
+          borderColor: isDark ? "#2466d1" : "#4F8EF7",
+          borderRadius: 8,
+          paddingHorizontal: 16,
+          paddingVertical: 8,
+          marginRight: 8,
+        },
+        voteButtonText: {
+          color: isDark ? "#2466d1" : "#4F8EF7",
+          fontWeight: "bold",
+          marginLeft: 4,
+        },
+        availableDates: {
+          fontSize: 12,
+        },
+        commonDates: {
+          marginTop: 12,
+          paddingTop: 12,
+          borderTopWidth: 1,
+          borderTopColor: isDark ? "#333" : "#f0f0f0",
+        },
+        commonDatesTitle: {
+          fontSize: 14,
+          fontWeight: "600",
+        },
+        aiRecommendation: {
+          flexDirection: "row",
+          alignItems: "center",
+          marginBottom: 12,
+        },
+        aiTitle: {
+          fontSize: 16,
+          fontWeight: "600",
+          marginLeft: 8,
+        },
+        recommendedDate: {
+          borderRadius: 8,
+          padding: 16,
+          alignItems: "center",
+          backgroundColor: isDark ? "#2466d1" : "#4F8EF7",
+        },
+        recommendedDateText: {
+          color: "#fff",
+          fontSize: 18,
+          fontWeight: "bold",
+        },
+        recommendedVotes: {
+          color: "#fff",
+          fontSize: 14,
+          marginTop: 4,
+        },
+        cardTitle: {
+          fontSize: 18,
+          fontWeight: "600",
+          marginBottom: 16,
+        },
+        dateCandidate: {
+          marginBottom: 20,
+          paddingBottom: 16,
+          borderBottomWidth: 1,
+          borderBottomColor: isDark ? "#333" : "#f0f0f0",
+        },
+        dateInfo: {
+          marginBottom: 12,
+        },
+        dateText: {
+          fontSize: 16,
+          fontWeight: "600",
+          color: textColor,
+        },
+        voteCount: {
+          fontSize: 14,
+          marginTop: 4,
+          color: infoColor,
+        },
+        voteSection: {
+          flexDirection: "row",
+          flexWrap: "wrap",
+          gap: 8,
+        },
+        deleteButton: {
+          position: "absolute",
+          top: 0,
+          right: 0,
+          padding: 8,
+        },
+        confirmButton: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: isDark ? "#388e3c" : "#4CAF50",
+          borderRadius: 12,
+          paddingVertical: 16,
+          marginTop: 20,
+          marginBottom: 40,
+        },
+        confirmButtonText: {
+          color: "#fff",
+          fontSize: 18,
+          fontWeight: "bold",
+          marginLeft: 8,
+        },
+        modalContainer: {
+          flex: 1,
+          backgroundColor: bgColor,
+        },
+        modalHeader: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingHorizontal: 20,
+          paddingVertical: 16,
+          borderBottomWidth: 1,
+          borderBottomColor: isDark ? "#222" : "#e0e0e0",
+        },
+        modalTitle: {
+          fontSize: 18,
+          fontWeight: "600",
+          color: textColor,
+        },
+        modalButton: {
+          fontSize: 16,
+          fontWeight: "600",
+        },
+        calendarContainer: {
+          flex: 1,
+          padding: 20,
+        },
+        monthNavigation: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 20,
+        },
+        monthTitle: {
+          fontSize: 18,
+          fontWeight: "600",
+          color: textColor,
+        },
+      }),
+    [isDark, cardColor, infoColor, textColor, bgColor]
+  );
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: bgColor }]}>
@@ -241,96 +695,160 @@ export default function VoteScreen() {
       </View>
 
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-        {/* 팀원 가능 일정 */}
-        <View style={[styles.card, { backgroundColor: cardColor }]}>
-          <Text style={[styles.cardTitle, { color: textColor }]}>팀원 가능 일정</Text>
-          <View style={styles.participantSchedule}>
-            {mockParticipants.map((participant) => (
-              <View key={participant.name} style={styles.participantRow}>
-                <View style={[styles.participantDot, { backgroundColor: participant.color }]} />
-                <Text style={[styles.participantName, { color: textColor }]}>{participant.name}</Text>
-                <Text style={[styles.availableDates, { color: infoColor }]}>{participant.availableDates.length}일 가능</Text>
-              </View>
-            ))}
-          </View>
-          {commonDates.length > 0 && (
-            <View style={styles.commonDates}>
-              <Text style={[styles.commonDatesTitle, { color: textColor }]}>모두 가능한 날짜: {commonDates.length}일</Text>
-            </View>
-          )}
-        </View>
-
-        {/* AI 추천 일정 */}
-        {bestDate && bestDate.votes.length > 0 && (
-          <View style={[styles.card, { backgroundColor: cardColor }]}>
-            <View style={styles.aiRecommendation}>
-              <MaterialCommunityIcons name="robot" size={24} color="#4CAF50" />
-              <Text style={[styles.aiTitle, { color: textColor }]}>AI 추천 일정</Text>
-            </View>
-            <View style={[styles.recommendedDate, { backgroundColor: "#4CAF50" }]}>
-              <Text style={styles.recommendedDateText}>
-                {bestDate.date} {bestDate.time}
-              </Text>
-              <Text style={styles.recommendedVotes}>{bestDate.votes.length}명 참석 가능</Text>
-            </View>
+        {/* 확정 일정 강조 */}
+        {confirmedOption && (
+          <View
+            style={[
+              styles.confirmedCard,
+              {
+                backgroundColor: isDark ? "#23322a" : "#E3FCEC",
+                borderColor: isDark ? "#388e3c" : "#4CAF50",
+              },
+            ]}
+          >
+            <MaterialCommunityIcons name="check-circle" size={20} color={isDark ? "#388e3c" : "#4CAF50"} style={{ marginRight: 8 }} />
+            <Text style={[styles.confirmedText, { color: isDark ? "#fff" : "#222" }]}>
+              확정 일정: {String(toDateString(confirmedOption.date))} {String(confirmedOption.time ?? "")}
+            </Text>
           </View>
         )}
-
+        {/* 일정 후보가 없을 때 안내 */}
+        {optionCount === 0 && (
+          <View style={styles.emptyBox}>
+            <MaterialCommunityIcons name="calendar-plus" size={48} color="#4F8EF7" style={{ marginBottom: 12 }} />
+            <Text style={[styles.emptyText, { color: textColor }]}>아직 일정 후보가 없습니다.</Text>
+            <Text style={[styles.emptySubText, { color: infoColor }]}>아래 버튼을 눌러 일정을 추가해보세요!</Text>
+          </View>
+        )}
         {/* 일정 후보 리스트 */}
-        <View style={[styles.card, { backgroundColor: cardColor }]}>
-          <Text style={[styles.cardTitle, { color: textColor }]}>일정 후보</Text>
-
-          {dateCandidates.map((date) => (
-            <View key={date.id} style={styles.dateCandidate}>
+        {(scheduleOptions ?? []).map((option) => {
+          const isMyVote = (option.votes ?? []).includes(user?.uid || "");
+          const isConfirmed = confirmedOption && confirmedOption.id === option.id;
+          return (
+            <View
+              key={option.id}
+              style={[
+                styles.dateCandidate,
+                isConfirmed
+                  ? {
+                      borderColor: isDark ? "#388e3c" : "#4CAF50",
+                      backgroundColor: isDark ? "#23322a" : "#E3FCEC",
+                    }
+                  : isMyVote
+                  ? {
+                      borderColor: isDark ? "#2466d1" : "#4F8EF7",
+                      backgroundColor: isDark ? "#232a33" : "#F0F6FF",
+                    }
+                  : {},
+              ]}
+            >
               <View style={styles.dateInfo}>
-                <Text style={[styles.dateText, { color: textColor }]}>
-                  {date.date} {date.time}
+                <Text
+                  style={[
+                    styles.dateText,
+                    { color: isConfirmed ? (isDark ? "#fff" : "#222") : textColor, fontWeight: isConfirmed ? "bold" : "600" },
+                  ]}
+                >
+                  {String(toDateString(option.date))} {String(option.time ?? "")}
                 </Text>
-                <Text style={[styles.voteCount, { color: infoColor }]}>{date.votes.length}명 참석 가능</Text>
+                <Text style={[styles.voteCount, { color: infoColor }]}>{(option.votes ?? []).length}명 참석 가능</Text>
               </View>
-
               <View style={styles.voteSection}>
-                {mockParticipants.map((participant) => (
-                  <TouchableOpacity
-                    key={participant.name}
-                    style={[
-                      styles.voteButton,
-                      {
-                        backgroundColor: date.votes.includes(participant.name) ? participant.color : "transparent",
-                        borderColor: participant.color,
-                      },
-                    ]}
-                    onPress={() => toggleVote(date.id, participant.name)}
-                  >
-                    <Text
-                      style={[
-                        styles.voteButtonText,
-                        {
-                          color: date.votes.includes(participant.name) ? "#fff" : participant.color,
-                        },
-                      ]}
-                    >
-                      {participant.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {(meeting?.participants ?? []).map((participant, index) => {
+                  const voted = (option.votes ?? []).includes(participant.id);
+                  return (
+                    <View key={participant.id} style={styles.voteAvatarBox}>
+                      <View
+                        style={[styles.voteAvatar, { backgroundColor: voted ? `hsl(${index * 60}, 70%, 60%)` : isDark ? "#444" : "#eee" }]}
+                      >
+                        <Text style={{ color: voted ? "#fff" : "#aaa", fontWeight: "bold" }}>
+                          {String(participant.name?.charAt(0) ?? "")}
+                        </Text>
+                      </View>
+                      <Text style={styles.voteAvatarName}>{String(participant.name ?? "")}</Text>
+                    </View>
+                  );
+                })}
               </View>
-
-              <TouchableOpacity style={styles.deleteButton} onPress={() => removeDateCandidate(date.id)}>
-                <MaterialCommunityIcons name="delete" size={16} color="#ff3b30" />
-              </TouchableOpacity>
+              <View style={styles.voteButtonRow}>
+                <TouchableOpacity
+                  style={[styles.voteButton, (option.votes ?? []).includes(user?.uid || "") && { backgroundColor: "#4F8EF7" }]}
+                  onPress={() => toggleVote(option.id)}
+                >
+                  <MaterialCommunityIcons
+                    name="thumb-up"
+                    size={16}
+                    color={(option.votes ?? []).includes(user?.uid || "") ? "#fff" : "#4F8EF7"}
+                  />
+                  <Text style={[styles.voteButtonText, (option.votes ?? []).includes(user?.uid || "") && { color: "#fff" }]}>참석</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.deleteButton} onPress={() => removeDateCandidate(option.id)}>
+                  <MaterialCommunityIcons name="delete" size={16} color="#ff3b30" />
+                </TouchableOpacity>
+              </View>
             </View>
-          ))}
-        </View>
-
+          );
+        })}
         {/* 일정 확정 버튼 */}
-        {bestDate && bestDate.votes.length > 0 && (
-          <TouchableOpacity style={styles.confirmButton} onPress={confirmSchedule}>
+        {bestDate && (bestDate.votes ?? []).length > 0 && (
+          <TouchableOpacity style={styles.confirmButton} onPress={() => confirmSchedule(bestDate.id)}>
             <MaterialCommunityIcons name="check-circle" size={20} color="#fff" />
-            <Text style={styles.confirmButtonText}>일정 확정하기</Text>
+            <Text style={styles.confirmButtonText}>일정 투표하기</Text>
           </TouchableOpacity>
         )}
+        {confirmedOption && (
+          <View style={{ marginTop: 16, marginBottom: 16 }}>
+            <Text style={{ fontWeight: "bold", marginBottom: 8, color: textColor }}>확정 일정 참석 여부</Text>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              {["confirmed", "pending", "declined"].map((status) => (
+                <TouchableOpacity
+                  key={status}
+                  style={{
+                    backgroundColor:
+                      localStatus === status
+                        ? isDark
+                          ? status === "confirmed"
+                            ? "#2466d1"
+                            : status === "pending"
+                            ? "#444"
+                            : "#333"
+                          : status === "confirmed"
+                          ? "#4F8EF7"
+                          : "#eee"
+                        : isDark
+                        ? "#23262F"
+                        : "#eee",
+                    paddingVertical: 10,
+                    paddingHorizontal: 18,
+                    borderRadius: 8,
+                    marginRight: 8,
+                  }}
+                  onPress={() => handleStatusChange(status as any)}
+                  disabled={localStatus === status}
+                >
+                  <Text
+                    style={{
+                      color: localStatus === status ? "#fff" : isDark ? "#bbb" : "#222",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    {status === "confirmed" ? "참석" : status === "pending" ? "미정" : "불참"}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
+        <View style={{ height: 100 }} /> {/* 플로팅 버튼 영역 확보 */}
       </ScrollView>
+
+      {/* 하단 플로팅 일정 추가 버튼 */}
+      <View style={styles.fabContainer}>
+        <TouchableOpacity style={styles.fab} onPress={() => setShowCalendar(true)}>
+          <MaterialCommunityIcons name="plus" size={28} color="#fff" />
+          <Text style={styles.fabText}>일정 추가</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* 캘린더 모달 */}
       <Modal visible={showCalendar} animationType="slide" presentationStyle="pageSheet">
@@ -400,9 +918,9 @@ export default function VoteScreen() {
             {/* 선택된 날짜 표시 */}
             {selectedDates.length > 0 && (
               <View style={[styles.selectedDatesContainer, { backgroundColor: cardColor }]}>
-                <Text style={[styles.selectedDatesTitle, { color: textColor }]}>선택된 날짜 ({selectedDates.length}일)</Text>
+                <Text style={[styles.selectedDatesTitle, { color: textColor }]}>선택된 날짜 {(selectedDates ?? []).length}일</Text>
                 <View style={styles.selectedDatesList}>
-                  {selectedDates.map((date, index) => {
+                  {(selectedDates ?? []).map((date, index) => {
                     const dateObj = new Date(date);
                     const month = dateObj.getMonth() + 1;
                     const day = dateObj.getDate();
@@ -456,291 +974,3 @@ export default function VoteScreen() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  card: {
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  participantSchedule: {
-    marginBottom: 12,
-  },
-  participantRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  participantDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 8,
-  },
-  participantName: {
-    fontSize: 14,
-    fontWeight: "500",
-    flex: 1,
-  },
-  availableDates: {
-    fontSize: 12,
-  },
-  commonDates: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#f0f0f0",
-  },
-  commonDatesTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  aiRecommendation: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  aiTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginLeft: 8,
-  },
-  recommendedDate: {
-    borderRadius: 8,
-    padding: 16,
-    alignItems: "center",
-  },
-  recommendedDateText: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  recommendedVotes: {
-    color: "#fff",
-    fontSize: 14,
-    marginTop: 4,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    marginBottom: 16,
-  },
-  dateCandidate: {
-    marginBottom: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
-  },
-  dateInfo: {
-    marginBottom: 12,
-  },
-  dateText: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  voteCount: {
-    fontSize: 14,
-    marginTop: 4,
-  },
-  voteSection: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  voteButton: {
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  voteButtonText: {
-    fontSize: 12,
-    fontWeight: "500",
-  },
-  deleteButton: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    padding: 8,
-  },
-  confirmButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#4CAF50",
-    borderRadius: 12,
-    paddingVertical: 16,
-    marginTop: 20,
-    marginBottom: 40,
-  },
-  confirmButtonText: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "bold",
-    marginLeft: 8,
-  },
-  modalContainer: {
-    flex: 1,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e0e0e0",
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  modalButton: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  calendarContainer: {
-    flex: 1,
-    padding: 20,
-  },
-  monthNavigation: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 20,
-  },
-  monthTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  weekHeader: {
-    flexDirection: "row",
-    marginBottom: 10,
-    paddingHorizontal: 10,
-  },
-  weekDay: {
-    flex: 1,
-    textAlign: "center",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  calendarGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginBottom: 30,
-    paddingHorizontal: 10,
-  },
-  calendarDayContainer: {
-    width: "14.285%", // 100% / 7 = 14.285%
-    aspectRatio: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 2,
-  },
-  calendarDay: {
-    width: "100%",
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 20,
-    overflow: "hidden",
-  },
-  otherMonthDay: {
-    opacity: 0.3,
-  },
-  today: {
-    backgroundColor: "#4F8EF7",
-  },
-  selectedDay: {
-    backgroundColor: "#4CAF50",
-  },
-  dayText: {
-    fontSize: 16,
-    fontWeight: "500",
-    textAlign: "center",
-  },
-  todayText: {
-    color: "#fff",
-  },
-  selectedDayText: {
-    color: "#fff",
-  },
-  timeSelection: {
-    marginTop: 20,
-    paddingHorizontal: 10,
-  },
-  timeTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 12,
-  },
-  timeGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  timeOption: {
-    borderWidth: 1,
-    borderColor: "#e0e0e0",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    minWidth: 80,
-    alignItems: "center",
-  },
-  timeText: {
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  selectedDatesContainer: {
-    marginBottom: 20,
-    padding: 16,
-    borderRadius: 8,
-    marginHorizontal: 10,
-  },
-  selectedDatesTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 12,
-  },
-  selectedDatesList: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  selectedDateItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f0f0f0",
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    gap: 8,
-  },
-  selectedDateText: {
-    fontSize: 14,
-    fontWeight: "500",
-  },
-});

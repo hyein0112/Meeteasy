@@ -20,29 +20,34 @@ export default function InviteScreen() {
       const data = JSON.parse(params.meetingData as string);
       setMeetingData(data);
 
-      // UUID v4 생성 (32자리 고유 ID)
-      const generateUUID = () => {
-        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
-          const r = (Math.random() * 16) | 0;
-          const v = c === "x" ? r : (r & 0x3) | 0x8;
-          return v.toString(16);
-        });
-      };
-
-      const uuid = generateUUID();
-      setInviteLink(`https://meeteasy.app/join/${uuid}`);
+      // 실제 초대 코드를 사용하여 링크 생성
+      const inviteCode = data.inviteCode || "ABC123"; // 기본값
+      setInviteLink(`https://meeteasy.app/join/${inviteCode}`);
     }
   }, [params.meetingData, meetingData]);
 
   const shareInviteLink = async () => {
     try {
+      const shareMessage = `MeetEasy에서 모임에 초대합니다!
+
+모임명: ${meetingData?.name}
+초대 코드: ${meetingData?.inviteCode}
+초대 링크: ${inviteLink}
+
+앱에서 "모임 참여" 버튼을 눌러 초대 코드를 입력하거나 링크를 클릭하세요!`;
+
       await Share.share({
-        message: `MeetEasy에서 모임에 초대합니다!\n\n모임명: ${meetingData?.name}\n초대 링크: ${inviteLink}`,
+        message: shareMessage,
         title: "MeetEasy 모임 초대",
       });
     } catch (error) {
       Alert.alert("오류", "공유하기를 실패했습니다.");
     }
+  };
+
+  const copyInviteCode = () => {
+    // 실제로는 클립보드에 복사하는 로직 필요
+    Alert.alert("알림", "초대 코드가 복사되었습니다!");
   };
 
   const copyInviteLink = () => {
@@ -85,6 +90,20 @@ export default function InviteScreen() {
           <Text style={[styles.meetingName, { color: textColor }]}>{meetingData.name}</Text>
           {meetingData.purpose && <Text style={[styles.purpose, { color: infoColor }]}>{meetingData.purpose}</Text>}
           <Text style={[styles.info, { color: infoColor }]}>모임이 성공적으로 생성되었습니다!</Text>
+        </View>
+
+        {/* 초대 코드 */}
+        <View style={[styles.card, { backgroundColor: cardColor }]}>
+          <Text style={[styles.cardTitle, { color: textColor }]}>초대 코드</Text>
+          <View style={[styles.codeContainer, { borderColor: isDark ? "#333" : "#e0e0e0" }]}>
+            <Text style={[styles.codeText, { color: textColor }]}>{meetingData?.inviteCode || "ABC123"}</Text>
+            <TouchableOpacity style={styles.copyButton} onPress={copyInviteCode}>
+              <MaterialCommunityIcons name="content-copy" size={20} color="#4F8EF7" />
+            </TouchableOpacity>
+          </View>
+          <Text style={[styles.codeDescription, { color: infoColor }]}>
+            이 코드를 친구들에게 알려주세요. 앱에서 "모임 참여" 버튼을 눌러 코드를 입력하면 모임에 참여할 수 있습니다.
+          </Text>
         </View>
 
         {/* 초대 링크 */}
@@ -180,6 +199,27 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginBottom: 16,
   },
+  codeContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  codeText: {
+    flex: 1,
+    fontSize: 14,
+  },
+  copyButton: {
+    padding: 8,
+  },
+  codeDescription: {
+    fontSize: 14,
+    marginBottom: 16,
+    lineHeight: 20,
+  },
   linkContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -192,9 +232,6 @@ const styles = StyleSheet.create({
   linkText: {
     flex: 1,
     fontSize: 14,
-  },
-  copyButton: {
-    padding: 8,
   },
   shareButton: {
     flexDirection: "row",
