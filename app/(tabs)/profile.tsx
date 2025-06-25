@@ -56,7 +56,7 @@ export default function ProfileScreen() {
       <View style={[styles.container, { backgroundColor: bgColor }]}>
         <View style={styles.header}>
           <MaterialCommunityIcons name="account-circle" size={28} color="#4F8EF7" style={{ marginRight: 8 }} />
-          <Text style={[styles.title, { color: textColor }]}>내 정보ㄱr</Text>
+          <Text style={[styles.title, { color: textColor }]}>내 정보</Text>
           <View style={{ flex: 1, alignItems: "flex-end" }}>
             <Text style={{ color: textColor, fontSize: 15 }}>{userProfile?.email || ""}</Text>
           </View>
